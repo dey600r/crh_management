@@ -1,0 +1,47 @@
+{
+  "entities": {
+    "Employee": {
+      "title": "Employee",
+      "description": "Un colaborador de la empresa",
+      "type": "object",
+      "properties": {
+        "employeeId": { "type": "string" },
+        "name": { "type": "string" },
+        "surname": { "type": "string" },
+        "currentLevelId": { "type": "string" },
+        "currentCareerPathId": { "type": "string" },
+        "availabilityPercent": { "type": "number" },
+        "skills": { "type": "array" },
+        "certifications": { "type": "array" },
+        "projectHistory": { "type": "array" }
+      },
+      "required": ["employeeId", "name", "surname", "currentLevelId", "currentCareerPathId"]
+    },
+    "Project": {
+      "title": "Project",
+      "description": "Un proyecto activo o planificado",
+      "type": "object",
+      "properties": {
+        "projectId": { "type": "string" },
+        "clientName": { "type": "string" },
+        "projectName": { "type": "string" },
+        "status": { "type": "string" },
+        "startDate": { "type": "string" },
+        "endDate": { "type": "string" },
+        "budget": { "type": "number" },
+        "technologies": { "type": "array" }
+      },
+      "required": ["projectId", "projectName", "status"]
+    }
+  },
+  "firestore": {
+    "employees": {
+      "schema": "Employee",
+      "description": "Colección de colaboradores"
+    },
+    "projects": {
+      "schema": "Project",
+      "description": "Colección de proyectos"
+    }
+  }
+}

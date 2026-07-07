@@ -12,8 +12,8 @@ import {
   AnnualEvaluation,
   DevelopmentPlan
 } from '../types';
-import { initializeApp, getApps, getApp } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
+import { initializeApp, getApps, getApp } from 'firebase/app';
+import { getFirestore, collection, getDocs, doc, getDoc, setDoc, updateDoc, query, limit } from 'firebase/firestore';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 
@@ -27,9 +27,7 @@ if (existsSync(configPath)) {
     const config = JSON.parse(configContent);
     let app;
     if (getApps().length === 0) {
-      app = initializeApp({
-        projectId: config.projectId,
-      });
+      app = initializeApp(config);
     } else {
       app = getApp();
     }
@@ -479,56 +477,56 @@ export class DatabaseStore {
       return;
     }
     try {
-      const snapshot = await db.collection('employees').limit(1).get();
+      const snapshot = await getDocs(query(collection(db, 'employees'), limit(1)));
       if (snapshot.empty) {
         console.log('[Firestore] Seeding initial data...');
         // Seed career families
         for (const item of INITIAL_CAREER_FAMILIES) {
-          await db.collection('careerFamilies').doc(item.id).set(item);
+          await setDoc(doc(db, 'careerFamilies', item.id), item);
         }
         // Seed career paths
         for (const item of INITIAL_CAREER_PATHS) {
-          await db.collection('careerPaths').doc(item.id).set(item);
+          await setDoc(doc(db, 'careerPaths', item.id), item);
         }
         // Seed career levels
         for (const item of INITIAL_CAREER_LEVELS) {
-          await db.collection('careerLevels').doc(item.id).set(item);
+          await setDoc(doc(db, 'careerLevels', item.id), item);
         }
         // Seed competencies
         for (const item of INITIAL_COMPETENCIES) {
-          await db.collection('competencies').doc(item.id).set(item);
+          await setDoc(doc(db, 'competencies', item.id), item);
         }
         // Seed trainings
         for (const item of INITIAL_TRAINING_CATALOG) {
-          await db.collection('trainings').doc(item.trainingId).set(item);
+          await setDoc(doc(db, 'trainings', item.trainingId), item);
         }
         // Seed employees
         for (const item of INITIAL_EMPLOYEES) {
-          await db.collection('employees').doc(item.employeeId).set(item);
+          await setDoc(doc(db, 'employees', item.employeeId), item);
         }
         // Seed projects
         for (const item of INITIAL_PROJECTS) {
-          await db.collection('projects').doc(item.projectId).set(item);
+          await setDoc(doc(db, 'projects', item.projectId), item);
         }
         // Seed role requests
         for (const item of INITIAL_ROLE_REQUESTS) {
-          await db.collection('roleRequests').doc(item.id).set(item);
+          await setDoc(doc(db, 'roleRequests', item.id), item);
         }
         // Seed assignments
         for (const item of INITIAL_ASSIGNMENTS) {
-          await db.collection('assignments').doc(item.assignmentId).set(item);
+          await setDoc(doc(db, 'assignments', item.assignmentId), item);
         }
         // Seed checkpoints
         for (const item of INITIAL_CHECKPOINTS) {
-          await db.collection('checkpoints').doc(item.id).set(item);
+          await setDoc(doc(db, 'checkpoints', item.id), item);
         }
         // Seed dev plans
         for (const item of INITIAL_DEVELOPMENT_PLANS) {
-          await db.collection('devPlans').doc(item.id).set(item);
+          await setDoc(doc(db, 'devPlans', item.id), item);
         }
         // Seed annual evaluations
         for (const item of INITIAL_ANNUAL_EVALUATIONS) {
-          await db.collection('annualEvaluations').doc(item.evaluationId).set(item);
+          await setDoc(doc(db, 'annualEvaluations', item.evaluationId), item);
         }
         console.log('[Firestore] Data seeding completed.');
       } else {
@@ -543,10 +541,10 @@ export class DatabaseStore {
   private async getAllDocs<T>(collectionName: string, fallback: T[]): Promise<T[]> {
     if (!db) return fallback;
     try {
-      const snapshot = await db.collection(collectionName).get();
+      const snapshot = await getDocs(collection(db, collectionName));
       const list: T[] = [];
-      snapshot.forEach((doc: any) => {
-        list.push(doc.data() as T);
+      snapshot.forEach((docSnap) => {
+        list.push(docSnap.data() as T);
       });
       return list;
     } catch (err) {
@@ -610,9 +608,9 @@ export class DatabaseStore {
       return this.memEmployees.find(e => e.employeeId === id) || null;
     }
     try {
-      const doc = await db.collection('employees').doc(id).get();
-      if (doc.exists) {
-        return doc.data() as Employee;
+      const docSnap = await getDoc(doc(db, 'employees', id));
+      if (docSnap.exists()) {
+        return docSnap.data() as Employee;
       }
       return null;
     } catch (err) {
@@ -631,7 +629,7 @@ export class DatabaseStore {
       return null;
     }
     try {
-      await db.collection('employees').doc(id).update(updated);
+      await updateDoc(doc(db, 'employees', id), updated);
       return this.getEmployee(id);
     } catch (err) {
       console.error(`[Firestore] Error updating employee ${id}:`, err);
@@ -645,7 +643,7 @@ export class DatabaseStore {
       return emp;
     }
     try {
-      await db.collection('employees').doc(emp.employeeId).set(emp);
+      await setDoc(doc(db, 'employees', emp.employeeId), emp);
       return emp;
     } catch (err) {
       console.error('[Firestore] Error adding employee:', err);
@@ -676,9 +674,9 @@ export class DatabaseStore {
       return this.memProjects.find(p => p.projectId === id) || null;
     }
     try {
-      const doc = await db.collection('projects').doc(id).get();
-      if (doc.exists) {
-        return doc.data() as Project;
+      const docSnap = await getDoc(doc(db, 'projects', id));
+      if (docSnap.exists()) {
+        return docSnap.data() as Project;
       }
       return null;
     } catch (err) {
@@ -693,7 +691,7 @@ export class DatabaseStore {
       return prj;
     }
     try {
-      await db.collection('projects').doc(prj.projectId).set(prj);
+      await setDoc(doc(db, 'projects', prj.projectId), prj);
       return prj;
     } catch (err) {
       console.error('[Firestore] Error adding project:', err);
@@ -708,7 +706,7 @@ export class DatabaseStore {
       return req;
     }
     try {
-      await db.collection('roleRequests').doc(req.id).set(req);
+      await setDoc(doc(db, 'roleRequests', req.id), req);
       return req;
     } catch (err) {
       console.error('[Firestore] Error adding role request:', err);
@@ -727,7 +725,7 @@ export class DatabaseStore {
       return asg;
     }
     try {
-      await db.collection('assignments').doc(asg.assignmentId).set(asg);
+      await setDoc(doc(db, 'assignments', asg.assignmentId), asg);
       const emp = await this.getEmployee(asg.employeeId);
       if (emp) {
         const newAvailability = Math.max(0, emp.availabilityPercent - asg.allocationPercent);
@@ -747,7 +745,7 @@ export class DatabaseStore {
       return chk;
     }
     try {
-      await db.collection('checkpoints').doc(chk.id).set(chk);
+      await setDoc(doc(db, 'checkpoints', chk.id), chk);
       return chk;
     } catch (err) {
       console.error('[Firestore] Error adding checkpoint:', err);
@@ -766,9 +764,9 @@ export class DatabaseStore {
       return null;
     }
     try {
-      await db.collection('annualEvaluations').doc(id).update(updated);
-      const doc = await db.collection('annualEvaluations').doc(id).get();
-      return doc.exists ? (doc.data() as AnnualEvaluation) : null;
+      await updateDoc(doc(db, 'annualEvaluations', id), updated);
+      const docSnap = await getDoc(doc(db, 'annualEvaluations', id));
+      return docSnap.exists() ? (docSnap.data() as AnnualEvaluation) : null;
     } catch (err) {
       console.error(`[Firestore] Error updating evaluation ${id}:`, err);
       return null;
@@ -781,7 +779,7 @@ export class DatabaseStore {
       return val;
     }
     try {
-      await db.collection('annualEvaluations').doc(val.evaluationId).set(val);
+      await setDoc(doc(db, 'annualEvaluations', val.evaluationId), val);
       return val;
     } catch (err) {
       console.error('[Firestore] Error adding evaluation:', err);
@@ -813,7 +811,7 @@ export class DatabaseStore {
       if (!db) {
         this.memDevPlans.push(newPlan);
       } else {
-        await db.collection('devPlans').doc(newPlan.id).set(newPlan);
+        await setDoc(doc(db, 'devPlans', newPlan.id), newPlan);
       }
       return newPlan;
     } else {
@@ -821,9 +819,9 @@ export class DatabaseStore {
       if (!db) {
         plan.actions = updatedActions;
       } else {
-        await db.collection('devPlans').doc(plan.id).update({ actions: updatedActions });
-        const doc = await db.collection('devPlans').doc(plan.id).get();
-        plan = doc.data() as DevelopmentPlan;
+        await updateDoc(doc(db, 'devPlans', plan.id), { actions: updatedActions });
+        const docSnap = await getDoc(doc(db, 'devPlans', plan.id));
+        plan = docSnap.data() as DevelopmentPlan;
       }
       return plan;
     }
