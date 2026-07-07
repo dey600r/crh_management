@@ -1,0 +1,8 @@
+{
+  "name": "CRH Management",
+  "description": "Plataforma integral de gestión del talento, staffing inteligente con matching de IA, desarrollo profesional y evaluación anual calibrada para consultorías IT.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
