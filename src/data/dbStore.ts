@@ -12,6 +12,38 @@ import {
   AnnualEvaluation,
   DevelopmentPlan
 } from '../types';
+import { initializeApp, getApps, getApp } from 'firebase-admin/app';
+import { getFirestore } from 'firebase-admin/firestore';
+import { readFileSync, existsSync } from 'fs';
+import { join } from 'path';
+
+// Firebase Firestore dynamic configuration
+const configPath = join(process.cwd(), 'firebase-applet-config.json');
+let db: any = null;
+
+if (existsSync(configPath)) {
+  try {
+    const configContent = readFileSync(configPath, 'utf8');
+    const config = JSON.parse(configContent);
+    let app;
+    if (getApps().length === 0) {
+      app = initializeApp({
+        projectId: config.projectId,
+      });
+    } else {
+      app = getApp();
+    }
+    
+    if (config.firestoreDatabaseId) {
+      db = getFirestore(app, config.firestoreDatabaseId);
+    } else {
+      db = getFirestore(app);
+    }
+    console.log('[Firestore] Successfully initialized connection to database:', config.firestoreDatabaseId || '(default)');
+  } catch (error) {
+    console.error('[Firestore] Failed to initialize Firebase in dbStore:', error);
+  }
+}
 
 export const INITIAL_CAREER_FAMILIES: CareerFamily[] = [
   { id: 'F_ARC', code: 'ARC', name: 'Architecture & Tech Leadership', description: 'Diseño técnico, gobernanza de sistemas y liderazgo tecnológico.', active: true },
@@ -423,76 +455,389 @@ export const INITIAL_ANNUAL_EVALUATIONS: AnnualEvaluation[] = [
   }
 ];
 
-// Persistent state class in server
+// Persistent state class in server using Firestore and memory fallbacks
 export class DatabaseStore {
-  careerFamilies = [...INITIAL_CAREER_FAMILIES];
-  careerPaths = [...INITIAL_CAREER_PATHS];
-  careerLevels = [...INITIAL_CAREER_LEVELS];
-  competencies = [...INITIAL_COMPETENCIES];
-  trainings = [...INITIAL_TRAINING_CATALOG];
-  employees = [...INITIAL_EMPLOYEES];
-  projects = [...INITIAL_PROJECTS];
-  roleRequests = [...INITIAL_ROLE_REQUESTS];
-  assignments = [...INITIAL_ASSIGNMENTS];
-  checkpoints = [...INITIAL_CHECKPOINTS];
-  devPlans = [...INITIAL_DEVELOPMENT_PLANS];
-  annualEvaluations = [...INITIAL_ANNUAL_EVALUATIONS];
+  // Fallbacks in-memory (just in case)
+  private memCareerFamilies = [...INITIAL_CAREER_FAMILIES];
+  private memCareerPaths = [...INITIAL_CAREER_PATHS];
+  private memCareerLevels = [...INITIAL_CAREER_LEVELS];
+  private memCompetencies = [...INITIAL_COMPETENCIES];
+  private memTrainings = [...INITIAL_TRAINING_CATALOG];
+  private memEmployees = [...INITIAL_EMPLOYEES];
+  private memProjects = [...INITIAL_PROJECTS];
+  private memRoleRequests = [...INITIAL_ROLE_REQUESTS];
+  private memAssignments = [...INITIAL_ASSIGNMENTS];
+  private memCheckpoints = [...INITIAL_CHECKPOINTS];
+  private memDevPlans = [...INITIAL_DEVELOPMENT_PLANS];
+  private memAnnualEvaluations = [...INITIAL_ANNUAL_EVALUATIONS];
 
   constructor() {}
 
-  // Basic CRUD utilities
-  getEmployee(id: string) {
-    return this.employees.find(e => e.employeeId === id);
-  }
-
-  updateEmployee(id: string, updated: Partial<Employee>) {
-    const idx = this.employees.findIndex(e => e.employeeId === id);
-    if (idx !== -1) {
-      this.employees[idx] = { ...this.employees[idx], ...updated };
-      return this.employees[idx];
+  async initialize() {
+    if (!db) {
+      console.log('[Firestore] No active database connection. Operating in memory-only mode.');
+      return;
     }
-    return null;
-  }
-
-  getProject(id: string) {
-    return this.projects.find(p => p.projectId === id);
-  }
-
-  addProjectRoleRequest(req: ProjectRoleRequest) {
-    this.roleRequests.push(req);
-    return req;
-  }
-
-  addProjectAssignment(asg: ProjectAssignment) {
-    this.assignments.push(asg);
-    // reduce employee availability when assigned
-    const emp = this.employees.find(e => e.employeeId === asg.employeeId);
-    if (emp) {
-      emp.availabilityPercent = Math.max(0, emp.availabilityPercent - asg.allocationPercent);
+    try {
+      const snapshot = await db.collection('employees').limit(1).get();
+      if (snapshot.empty) {
+        console.log('[Firestore] Seeding initial data...');
+        // Seed career families
+        for (const item of INITIAL_CAREER_FAMILIES) {
+          await db.collection('careerFamilies').doc(item.id).set(item);
+        }
+        // Seed career paths
+        for (const item of INITIAL_CAREER_PATHS) {
+          await db.collection('careerPaths').doc(item.id).set(item);
+        }
+        // Seed career levels
+        for (const item of INITIAL_CAREER_LEVELS) {
+          await db.collection('careerLevels').doc(item.id).set(item);
+        }
+        // Seed competencies
+        for (const item of INITIAL_COMPETENCIES) {
+          await db.collection('competencies').doc(item.id).set(item);
+        }
+        // Seed trainings
+        for (const item of INITIAL_TRAINING_CATALOG) {
+          await db.collection('trainings').doc(item.trainingId).set(item);
+        }
+        // Seed employees
+        for (const item of INITIAL_EMPLOYEES) {
+          await db.collection('employees').doc(item.employeeId).set(item);
+        }
+        // Seed projects
+        for (const item of INITIAL_PROJECTS) {
+          await db.collection('projects').doc(item.projectId).set(item);
+        }
+        // Seed role requests
+        for (const item of INITIAL_ROLE_REQUESTS) {
+          await db.collection('roleRequests').doc(item.id).set(item);
+        }
+        // Seed assignments
+        for (const item of INITIAL_ASSIGNMENTS) {
+          await db.collection('assignments').doc(item.assignmentId).set(item);
+        }
+        // Seed checkpoints
+        for (const item of INITIAL_CHECKPOINTS) {
+          await db.collection('checkpoints').doc(item.id).set(item);
+        }
+        // Seed dev plans
+        for (const item of INITIAL_DEVELOPMENT_PLANS) {
+          await db.collection('devPlans').doc(item.id).set(item);
+        }
+        // Seed annual evaluations
+        for (const item of INITIAL_ANNUAL_EVALUATIONS) {
+          await db.collection('annualEvaluations').doc(item.evaluationId).set(item);
+        }
+        console.log('[Firestore] Data seeding completed.');
+      } else {
+        console.log('[Firestore] Database is already seeded.');
+      }
+    } catch (err) {
+      console.error('[Firestore] Failed to seed database:', err);
     }
-    return asg;
   }
 
-  addCheckpoint(chk: CheckpointReview) {
-    this.checkpoints.push(chk);
-    return chk;
-  }
-
-  updateAnnualEvaluation(id: string, updated: Partial<AnnualEvaluation>) {
-    const idx = this.annualEvaluations.findIndex(e => e.evaluationId === id);
-    if (idx !== -1) {
-      this.annualEvaluations[idx] = { ...this.annualEvaluations[idx], ...updated } as AnnualEvaluation;
-      return this.annualEvaluations[idx];
+  // Helper to fetch all docs in a collection
+  private async getAllDocs<T>(collectionName: string, fallback: T[]): Promise<T[]> {
+    if (!db) return fallback;
+    try {
+      const snapshot = await db.collection(collectionName).get();
+      const list: T[] = [];
+      snapshot.forEach((doc: any) => {
+        list.push(doc.data() as T);
+      });
+      return list;
+    } catch (err) {
+      console.error(`[Firestore] Error fetching collection ${collectionName}:`, err);
+      return fallback;
     }
-    return null;
+  }
+
+  // Getters for individual components
+  async getCareerFamilies() {
+    return this.getAllDocs<CareerFamily>('careerFamilies', this.memCareerFamilies);
+  }
+
+  async getCareerPaths() {
+    return this.getAllDocs<CareerPath>('careerPaths', this.memCareerPaths);
+  }
+
+  async getCareerLevels() {
+    return this.getAllDocs<CareerLevel>('careerLevels', this.memCareerLevels);
+  }
+
+  async getCompetencies() {
+    return this.getAllDocs<Competency>('competencies', this.memCompetencies);
+  }
+
+  async getTrainings() {
+    return this.getAllDocs<TrainingCatalog>('trainings', this.memTrainings);
+  }
+
+  async getEmployees() {
+    return this.getAllDocs<Employee>('employees', this.memEmployees);
+  }
+
+  async getProjects() {
+    return this.getAllDocs<Project>('projects', this.memProjects);
+  }
+
+  async getRoleRequests() {
+    return this.getAllDocs<ProjectRoleRequest>('roleRequests', this.memRoleRequests);
+  }
+
+  async getAssignments() {
+    return this.getAllDocs<ProjectAssignment>('assignments', this.memAssignments);
+  }
+
+  async getCheckpoints() {
+    return this.getAllDocs<CheckpointReview>('checkpoints', this.memCheckpoints);
+  }
+
+  async getDevPlans() {
+    return this.getAllDocs<DevelopmentPlan>('devPlans', this.memDevPlans);
+  }
+
+  async getAnnualEvaluations() {
+    return this.getAllDocs<AnnualEvaluation>('annualEvaluations', this.memAnnualEvaluations);
+  }
+
+  // CRUD utilities
+  async getEmployee(id: string): Promise<Employee | null> {
+    if (!db) {
+      return this.memEmployees.find(e => e.employeeId === id) || null;
+    }
+    try {
+      const doc = await db.collection('employees').doc(id).get();
+      if (doc.exists) {
+        return doc.data() as Employee;
+      }
+      return null;
+    } catch (err) {
+      console.error(`[Firestore] Error getting employee ${id}:`, err);
+      return this.memEmployees.find(e => e.employeeId === id) || null;
+    }
+  }
+
+  async updateEmployee(id: string, updated: Partial<Employee>): Promise<Employee | null> {
+    if (!db) {
+      const idx = this.memEmployees.findIndex(e => e.employeeId === id);
+      if (idx !== -1) {
+        this.memEmployees[idx] = { ...this.memEmployees[idx], ...updated };
+        return this.memEmployees[idx];
+      }
+      return null;
+    }
+    try {
+      await db.collection('employees').doc(id).update(updated);
+      return this.getEmployee(id);
+    } catch (err) {
+      console.error(`[Firestore] Error updating employee ${id}:`, err);
+      return null;
+    }
+  }
+
+  async addEmployee(emp: Employee): Promise<Employee> {
+    if (!db) {
+      this.memEmployees.push(emp);
+      return emp;
+    }
+    try {
+      await db.collection('employees').doc(emp.employeeId).set(emp);
+      return emp;
+    } catch (err) {
+      console.error('[Firestore] Error adding employee:', err);
+      this.memEmployees.push(emp);
+      return emp;
+    }
+  }
+
+  async addEmployeeSkill(id: string, skill: any): Promise<Employee | null> {
+    const emp = await this.getEmployee(id);
+    if (!emp) return null;
+    
+    const newSkill = {
+      skillId: `s_${Date.now()}`,
+      name: skill.name,
+      category: skill.category || 'General',
+      level: Number(skill.level) || 3,
+      validatedDate: new Date().toISOString().split('T')[0],
+      source: skill.source || 'Self'
+    };
+    
+    const updatedSkills = [...(emp.skills || []), newSkill];
+    return this.updateEmployee(id, { skills: updatedSkills });
+  }
+
+  async getProject(id: string): Promise<Project | null> {
+    if (!db) {
+      return this.memProjects.find(p => p.projectId === id) || null;
+    }
+    try {
+      const doc = await db.collection('projects').doc(id).get();
+      if (doc.exists) {
+        return doc.data() as Project;
+      }
+      return null;
+    } catch (err) {
+      console.error(`[Firestore] Error getting project ${id}:`, err);
+      return this.memProjects.find(p => p.projectId === id) || null;
+    }
+  }
+
+  async addProject(prj: Project): Promise<Project> {
+    if (!db) {
+      this.memProjects.push(prj);
+      return prj;
+    }
+    try {
+      await db.collection('projects').doc(prj.projectId).set(prj);
+      return prj;
+    } catch (err) {
+      console.error('[Firestore] Error adding project:', err);
+      this.memProjects.push(prj);
+      return prj;
+    }
+  }
+
+  async addProjectRoleRequest(req: ProjectRoleRequest): Promise<ProjectRoleRequest> {
+    if (!db) {
+      this.memRoleRequests.push(req);
+      return req;
+    }
+    try {
+      await db.collection('roleRequests').doc(req.id).set(req);
+      return req;
+    } catch (err) {
+      console.error('[Firestore] Error adding role request:', err);
+      this.memRoleRequests.push(req);
+      return req;
+    }
+  }
+
+  async addProjectAssignment(asg: ProjectAssignment): Promise<ProjectAssignment> {
+    if (!db) {
+      this.memAssignments.push(asg);
+      const emp = this.memEmployees.find(e => e.employeeId === asg.employeeId);
+      if (emp) {
+        emp.availabilityPercent = Math.max(0, emp.availabilityPercent - asg.allocationPercent);
+      }
+      return asg;
+    }
+    try {
+      await db.collection('assignments').doc(asg.assignmentId).set(asg);
+      const emp = await this.getEmployee(asg.employeeId);
+      if (emp) {
+        const newAvailability = Math.max(0, emp.availabilityPercent - asg.allocationPercent);
+        await this.updateEmployee(asg.employeeId, { availabilityPercent: newAvailability });
+      }
+      return asg;
+    } catch (err) {
+      console.error('[Firestore] Error adding project assignment:', err);
+      this.memAssignments.push(asg);
+      return asg;
+    }
+  }
+
+  async addCheckpoint(chk: CheckpointReview): Promise<CheckpointReview> {
+    if (!db) {
+      this.memCheckpoints.push(chk);
+      return chk;
+    }
+    try {
+      await db.collection('checkpoints').doc(chk.id).set(chk);
+      return chk;
+    } catch (err) {
+      console.error('[Firestore] Error adding checkpoint:', err);
+      this.memCheckpoints.push(chk);
+      return chk;
+    }
+  }
+
+  async updateAnnualEvaluation(id: string, updated: Partial<AnnualEvaluation>): Promise<AnnualEvaluation | null> {
+    if (!db) {
+      const idx = this.memAnnualEvaluations.findIndex(e => e.evaluationId === id);
+      if (idx !== -1) {
+        this.memAnnualEvaluations[idx] = { ...this.memAnnualEvaluations[idx], ...updated } as AnnualEvaluation;
+        return this.memAnnualEvaluations[idx];
+      }
+      return null;
+    }
+    try {
+      await db.collection('annualEvaluations').doc(id).update(updated);
+      const doc = await db.collection('annualEvaluations').doc(id).get();
+      return doc.exists ? (doc.data() as AnnualEvaluation) : null;
+    } catch (err) {
+      console.error(`[Firestore] Error updating evaluation ${id}:`, err);
+      return null;
+    }
+  }
+
+  async addAnnualEvaluation(val: AnnualEvaluation): Promise<AnnualEvaluation> {
+    if (!db) {
+      this.memAnnualEvaluations.push(val);
+      return val;
+    }
+    try {
+      await db.collection('annualEvaluations').doc(val.evaluationId).set(val);
+      return val;
+    } catch (err) {
+      console.error('[Firestore] Error adding evaluation:', err);
+      this.memAnnualEvaluations.push(val);
+      return val;
+    }
+  }
+
+  async addDevPlanAction(employeeId: string, action: any): Promise<DevelopmentPlan | null> {
+    const plans = await this.getDevPlans();
+    let plan = plans.find(d => d.employeeId === employeeId);
+    const newAction = {
+      id: `DA_${Date.now()}`,
+      type: action.type || 'Training',
+      description: action.description,
+      targetDate: action.targetDate || new Date().toISOString().split('T')[0],
+      status: action.status || 'Pending',
+      trainingId: action.trainingId
+    };
+
+    if (!plan) {
+      const newPlan: DevelopmentPlan = {
+        id: `DP_${Date.now()}`,
+        employeeId: employeeId,
+        year: 2026,
+        status: 'Active',
+        actions: [newAction]
+      };
+      if (!db) {
+        this.memDevPlans.push(newPlan);
+      } else {
+        await db.collection('devPlans').doc(newPlan.id).set(newPlan);
+      }
+      return newPlan;
+    } else {
+      const updatedActions = [...(plan.actions || []), newAction];
+      if (!db) {
+        plan.actions = updatedActions;
+      } else {
+        await db.collection('devPlans').doc(plan.id).update({ actions: updatedActions });
+        const doc = await db.collection('devPlans').doc(plan.id).get();
+        plan = doc.data() as DevelopmentPlan;
+      }
+      return plan;
+    }
   }
 
   // Matching Engine calculation
-  getMatchingResults(requestId: string) {
-    const req = this.roleRequests.find(r => r.id === requestId);
+  async getMatchingResults(requestId: string) {
+    const roleReqs = await this.getRoleRequests();
+    const req = roleReqs.find(r => r.id === requestId);
     if (!req) return [];
 
-    return this.employees.map(emp => {
+    const emps = await this.getEmployees();
+
+    return emps.map(emp => {
       // 1. Skill Match Score: fraction of requiredSkills present in employee skills
       let skillScore = 0;
       if (req.requiredSkills.length > 0) {
@@ -559,3 +904,4 @@ export class DatabaseStore {
 }
 
 export const dbStoreInstance = new DatabaseStore();
+

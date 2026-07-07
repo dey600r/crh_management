@@ -31,19 +31,29 @@ async function startServer() {
 
   app.use(express.json());
 
+  // Initialize and seed Firestore database if empty
+  await dbStoreInstance.initialize();
+
   // ----------------------------------------------------
   // API ENDPOINTS - DATA CRUD
   // ----------------------------------------------------
 
   // 1. Career Framework Info
-  app.get('/api/career-framework', (req, res) => {
+  app.get('/api/career-framework', async (req, res) => {
     try {
+      const [families, paths, levels, competencies, trainings] = await Promise.all([
+        dbStoreInstance.getCareerFamilies(),
+        dbStoreInstance.getCareerPaths(),
+        dbStoreInstance.getCareerLevels(),
+        dbStoreInstance.getCompetencies(),
+        dbStoreInstance.getTrainings()
+      ]);
       res.json({
-        families: dbStoreInstance.careerFamilies,
-        paths: dbStoreInstance.careerPaths,
-        levels: dbStoreInstance.careerLevels,
-        competencies: dbStoreInstance.competencies,
-        trainings: dbStoreInstance.trainings
+        families,
+        paths,
+        levels,
+        competencies,
+        trainings
       });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -51,17 +61,18 @@ async function startServer() {
   });
 
   // 2. Employees Endpoints
-  app.get('/api/employees', (req, res) => {
+  app.get('/api/employees', async (req, res) => {
     try {
-      res.json(dbStoreInstance.employees);
+      const emps = await dbStoreInstance.getEmployees();
+      res.json(emps);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
 
-  app.get('/api/employees/:id', (req, res) => {
+  app.get('/api/employees/:id', async (req, res) => {
     try {
-      const emp = dbStoreInstance.getEmployee(req.params.id);
+      const emp = await dbStoreInstance.getEmployee(req.params.id);
       if (!emp) return res.status(404).json({ error: 'Employee not found' });
       res.json(emp);
     } catch (error: any) {
@@ -69,37 +80,28 @@ async function startServer() {
     }
   });
 
-  app.post('/api/employees', (req, res) => {
+  app.post('/api/employees', async (req, res) => {
     try {
       const newEmp = req.body;
       if (!newEmp.employeeId || !newEmp.name || !newEmp.surname) {
         return res.status(400).json({ error: 'Missing employee identifier or name properties' });
       }
-      dbStoreInstance.employees.push({
+      const added = await dbStoreInstance.addEmployee({
         ...newEmp,
         skills: newEmp.skills || [],
         certifications: newEmp.certifications || [],
         projectHistory: newEmp.projectHistory || []
       });
-      res.status(201).json(newEmp);
+      res.status(201).json(added);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
 
-  app.post('/api/employees/:id/skills', (req, res) => {
+  app.post('/api/employees/:id/skills', async (req, res) => {
     try {
-      const emp = dbStoreInstance.getEmployee(req.params.id);
+      const emp = await dbStoreInstance.addEmployeeSkill(req.params.id, req.body);
       if (!emp) return res.status(404).json({ error: 'Employee not found' });
-      const skill = req.body;
-      emp.skills.push({
-        skillId: `s_${Date.now()}`,
-        name: skill.name,
-        category: skill.category || 'General',
-        level: Number(skill.level) || 3,
-        validatedDate: new Date().toISOString().split('T')[0],
-        source: skill.source || 'Self'
-      });
       res.status(201).json(emp);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -107,21 +109,22 @@ async function startServer() {
   });
 
   // 3. Projects Endpoints
-  app.get('/api/projects', (req, res) => {
+  app.get('/api/projects', async (req, res) => {
     try {
-      res.json(dbStoreInstance.projects);
+      const prjs = await dbStoreInstance.getProjects();
+      res.json(prjs);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
 
-  app.post('/api/projects', (req, res) => {
+  app.post('/api/projects', async (req, res) => {
     try {
       const prj = req.body;
       if (!prj.projectId || !prj.projectName) {
         return res.status(400).json({ error: 'Missing projectId or projectName' });
       }
-      dbStoreInstance.projects.push({
+      const added = await dbStoreInstance.addProject({
         projectId: prj.projectId,
         clientName: prj.clientName || 'Cliente Genérico',
         projectName: prj.projectName,
@@ -132,22 +135,23 @@ async function startServer() {
         budget: Number(prj.budget) || 0,
         technologies: prj.technologies || []
       });
-      res.status(201).json(prj);
+      res.status(201).json(added);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
 
   // 4. Project Role Requests (Staffing Needs)
-  app.get('/api/role-requests', (req, res) => {
+  app.get('/api/role-requests', async (req, res) => {
     try {
-      res.json(dbStoreInstance.roleRequests);
+      const rrs = await dbStoreInstance.getRoleRequests();
+      res.json(rrs);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
 
-  app.post('/api/role-requests', (req, res) => {
+  app.post('/api/role-requests', async (req, res) => {
     try {
       const roleReq: ProjectRoleRequest = req.body;
       if (!roleReq.projectId || !roleReq.careerPathId || !roleReq.requiredLevelId) {
@@ -157,23 +161,24 @@ async function startServer() {
         ...roleReq,
         id: `REQ_${Date.now()}`
       };
-      dbStoreInstance.addProjectRoleRequest(newReq);
-      res.status(201).json(newReq);
+      const added = await dbStoreInstance.addProjectRoleRequest(newReq);
+      res.status(201).json(added);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
 
   // 5. Staffing Assignments
-  app.get('/api/assignments', (req, res) => {
+  app.get('/api/assignments', async (req, res) => {
     try {
-      res.json(dbStoreInstance.assignments);
+      const asgs = await dbStoreInstance.getAssignments();
+      res.json(asgs);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
 
-  app.post('/api/assignments', (req, res) => {
+  app.post('/api/assignments', async (req, res) => {
     try {
       const asg = req.body;
       if (!asg.employeeId || !asg.projectId) {
@@ -188,17 +193,17 @@ async function startServer() {
         startDate: asg.startDate || new Date().toISOString().split('T')[0],
         endDate: asg.endDate || ''
       };
-      dbStoreInstance.addProjectAssignment(newAsg);
-      res.status(201).json(newAsg);
+      const added = await dbStoreInstance.addProjectAssignment(newAsg);
+      res.status(201).json(added);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
 
   // 6. Matching Results (Staffing Algorithm)
-  app.get('/api/matching/:requestId', (req, res) => {
+  app.get('/api/matching/:requestId', async (req, res) => {
     try {
-      const results = dbStoreInstance.getMatchingResults(req.params.requestId);
+      const results = await dbStoreInstance.getMatchingResults(req.params.requestId);
       res.json(results);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -206,15 +211,16 @@ async function startServer() {
   });
 
   // 7. Checkpoints (Performance Reviews)
-  app.get('/api/checkpoints', (req, res) => {
+  app.get('/api/checkpoints', async (req, res) => {
     try {
-      res.json(dbStoreInstance.checkpoints);
+      const chks = await dbStoreInstance.getCheckpoints();
+      res.json(chks);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
 
-  app.post('/api/checkpoints', (req, res) => {
+  app.post('/api/checkpoints', async (req, res) => {
     try {
       const cp: CheckpointReview = req.body;
       if (!cp.employeeId || !cp.projectId || !cp.reviewerId) {
@@ -224,25 +230,26 @@ async function startServer() {
         ...cp,
         id: `CK_${Date.now()}`
       };
-      dbStoreInstance.addCheckpoint(newCp);
-      res.status(201).json(newCp);
+      const added = await dbStoreInstance.addCheckpoint(newCp);
+      res.status(201).json(added);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
 
   // 8. Annual Evaluations
-  app.get('/api/annual-evaluations', (req, res) => {
+  app.get('/api/annual-evaluations', async (req, res) => {
     try {
-      res.json(dbStoreInstance.annualEvaluations);
+      const evs = await dbStoreInstance.getAnnualEvaluations();
+      res.json(evs);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
 
-  app.put('/api/annual-evaluations/:id', (req, res) => {
+  app.put('/api/annual-evaluations/:id', async (req, res) => {
     try {
-      const updated = dbStoreInstance.updateAnnualEvaluation(req.params.id, req.body);
+      const updated = await dbStoreInstance.updateAnnualEvaluation(req.params.id, req.body);
       if (!updated) return res.status(404).json({ error: 'Evaluation not found' });
       res.json(updated);
     } catch (error: any) {
@@ -250,7 +257,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/annual-evaluations', (req, res) => {
+  app.post('/api/annual-evaluations', async (req, res) => {
     try {
       const val: AnnualEvaluation = req.body;
       if (!val.employeeId) {
@@ -260,46 +267,27 @@ async function startServer() {
         ...val,
         evaluationId: `EV_${Date.now()}`
       };
-      dbStoreInstance.annualEvaluations.push(newVal);
-      res.status(201).json(newVal);
+      const added = await dbStoreInstance.addAnnualEvaluation(newVal);
+      res.status(201).json(added);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
 
   // 9. Development Plans
-  app.get('/api/dev-plans', (req, res) => {
+  app.get('/api/dev-plans', async (req, res) => {
     try {
-      res.json(dbStoreInstance.devPlans);
+      const plans = await dbStoreInstance.getDevPlans();
+      res.json(plans);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
 
-  app.post('/api/dev-plans/:employeeId/actions', (req, res) => {
+  app.post('/api/dev-plans/:employeeId/actions', async (req, res) => {
     try {
       const empId = req.params.employeeId;
-      let plan = dbStoreInstance.devPlans.find(d => d.employeeId === empId);
-      if (!plan) {
-        plan = {
-          id: `DP_${Date.now()}`,
-          employeeId: empId,
-          year: 2026,
-          status: 'Active',
-          actions: []
-        };
-        dbStoreInstance.devPlans.push(plan);
-      }
-      const action = req.body;
-      const newAction = {
-        id: `DA_${Date.now()}`,
-        type: action.type || 'Training',
-        description: action.description,
-        targetDate: action.targetDate || new Date().toISOString().split('T')[0],
-        status: action.status || 'Pending',
-        trainingId: action.trainingId
-      };
-      plan.actions.push(newAction);
+      const plan = await dbStoreInstance.addDevPlanAction(empId, req.body);
       res.status(201).json(plan);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -373,6 +361,8 @@ async function startServer() {
         return res.status(400).json({ error: 'Missing employee or targetLevelId parameters' });
       }
 
+      const trainings = await dbStoreInstance.getTrainings();
+
       const prompt = `
         Colaborador: ${employee.name} ${employee.surname}
         Especialidad actual: ${employee.currentCareerPathId}
@@ -386,7 +376,7 @@ async function startServer() {
         ${JSON.stringify(employee.certifications)}
 
         Catálogo de formaciones disponibles en la empresa:
-        ${JSON.stringify(dbStoreInstance.trainings)}
+        ${JSON.stringify(trainings)}
 
         Por favor, actúa como el "HR PROJECT TALENT ORCHESTRATOR". Analiza las brechas de competencias (skills/seniority) que impiden a este colaborador promocionar al nivel ${targetLevelId} (según el Career Framework de IT Consulting).
         
@@ -467,25 +457,33 @@ async function startServer() {
         return res.status(400).json({ error: 'Missing chat messages array' });
       }
 
+      const [employees, projects, roleRequests, trainings, annualEvaluations] = await Promise.all([
+        dbStoreInstance.getEmployees(),
+        dbStoreInstance.getProjects(),
+        dbStoreInstance.getRoleRequests(),
+        dbStoreInstance.getTrainings(),
+        dbStoreInstance.getAnnualEvaluations()
+      ]);
+
       // We inject the whole system context into the conversation instruction
       const systemInstruction = `
         Eres "Talent Orchestrator AI", el copiloto inteligente de RRHH, staffing y desarrollo profesional dentro de la plataforma CRH Management.
         Tienes acceso a los datos completos de la empresa:
         
         Colaboradores actuales:
-        ${JSON.stringify(dbStoreInstance.employees.map(e => ({ id: e.employeeId, nombre: `${e.name} ${e.surname}`, nivel: e.currentLevelId, path: e.currentCareerPathId, skills: e.skills.map(s => `${s.name} (Lvl ${s.level})`), availability: e.availabilityPercent, certificaciones: e.certifications.map(c => c.certificationName) })))}
+        ${JSON.stringify(employees.map(e => ({ id: e.employeeId, nombre: `${e.name} ${e.surname}`, nivel: e.currentLevelId, path: e.currentCareerPathId, skills: e.skills.map(s => `${s.name} (Lvl ${s.level})`), availability: e.availabilityPercent, certificaciones: e.certifications.map(c => c.certificationName) })))}
 
         Proyectos activos y planificados:
-        ${JSON.stringify(dbStoreInstance.projects)}
+        ${JSON.stringify(projects)}
 
         Solicitudes de staffing vigentes (necesidades de recursos):
-        ${JSON.stringify(dbStoreInstance.roleRequests)}
+        ${JSON.stringify(roleRequests)}
 
         Catálogo de formaciones:
-        ${JSON.stringify(dbStoreInstance.trainings)}
+        ${JSON.stringify(trainings)}
 
         Evaluaciones de desempeño anuales del ciclo actual:
-        ${JSON.stringify(dbStoreInstance.annualEvaluations.map(ev => ({ id: ev.evaluationId, employeeId: ev.employeeId, score: ev.finalScore, result: ev.evaluationResult, status: ev.status, readyForPromotion: ev.promotionRecommendation })))}
+        ${JSON.stringify(annualEvaluations.map(ev => ({ id: ev.evaluationId, employeeId: ev.employeeId, score: ev.finalScore, result: ev.evaluationResult, status: ev.status, readyForPromotion: ev.promotionRecommendation })))}
 
         Tus responsabilidades son:
         1. Analizar necesidades de proyectos y proponer el mejor matching.
