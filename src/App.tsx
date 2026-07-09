@@ -256,6 +256,7 @@ export default function App() {
                     checkpoints={checkpoints}
                     careerLevels={careerLevels}
                     careerPaths={careerPaths}
+                    competencies={competencies}
                     onDataRefresh={fetchAllData}
                   />
                 )}

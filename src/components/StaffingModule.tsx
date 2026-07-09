@@ -57,6 +57,21 @@ export default function StaffingModule({
     priority: 'High' as 'High' | 'Medium' | 'Low'
   });
 
+  const [showAddEmployee, setShowAddEmployee] = useState(false);
+  const [newEmployee, setNewEmployee] = useState({
+    name: '',
+    surname: '',
+    email: '',
+    country: 'España',
+    office: 'Madrid',
+    department: 'Software Engineering',
+    currentCareerPathId: 'P_SWE',
+    currentLevelId: 'L3',
+    managerId: 'E004',
+    skills: '',
+    availabilityPercent: 100
+  });
+
   // Fetch match results whenever selected request changes
   useEffect(() => {
     if (selectedRequest) {
@@ -137,6 +152,91 @@ export default function StaffingModule({
     }
   };
 
+  const handleCreateEmployee = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newEmployee.name || !newEmployee.surname) return;
+
+    // Generate a unique ID based on existing IDs
+    const currentIds = employees.map(emp => {
+      const match = emp.employeeId.match(/\d+/);
+      return match ? parseInt(match[0], 10) : 0;
+    });
+    const maxId = currentIds.length > 0 ? Math.max(...currentIds) : 6;
+    const nextIdNum = maxId + 1;
+    const employeeId = `E${String(nextIdNum).padStart(3, '0')}`;
+
+    // Generate email if not custom specified
+    const cleanName = newEmployee.name.toLowerCase().trim().replace(/\s+/g, '.');
+    const cleanSurname = newEmployee.surname.toLowerCase().trim().replace(/\s+/g, '.');
+    const generatedEmail = newEmployee.email || `${cleanName}.${cleanSurname}@itconsulting.com`;
+
+    // Parse skills
+    const parsedSkills = newEmployee.skills
+      .split(',')
+      .map(s => s.trim())
+      .filter(Boolean)
+      .map((skillName, index) => ({
+        skillId: `s_${Date.now()}_${index}`,
+        name: skillName,
+        category: 'General',
+        level: 3,
+        validatedDate: new Date().toISOString().split('T')[0],
+        source: 'Self'
+      }));
+
+    const employeePayload = {
+      employeeId,
+      name: newEmployee.name.trim(),
+      surname: newEmployee.surname.trim(),
+      email: generatedEmail,
+      country: newEmployee.country,
+      office: newEmployee.office,
+      department: newEmployee.department,
+      managerId: newEmployee.managerId || 'E004',
+      careerManagerId: newEmployee.managerId || 'E004',
+      currentCareerPathId: newEmployee.currentCareerPathId,
+      currentLevelId: newEmployee.currentLevelId,
+      hireDate: new Date().toISOString().split('T')[0],
+      status: 'Active' as const,
+      availabilityPercent: Number(newEmployee.availabilityPercent) || 100,
+      skills: parsedSkills,
+      certifications: [],
+      projectHistory: []
+    };
+
+    try {
+      const res = await fetch('/api/employees', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(employeePayload)
+      });
+      if (res.ok) {
+        onDataRefresh();
+        setShowAddEmployee(false);
+        // reset form
+        setNewEmployee({
+          name: '',
+          surname: '',
+          email: '',
+          country: 'España',
+          office: 'Madrid',
+          department: 'Software Engineering',
+          currentCareerPathId: 'P_SWE',
+          currentLevelId: 'L3',
+          managerId: 'E004',
+          skills: '',
+          availabilityPercent: 100
+        });
+      } else {
+        const errorData = await res.json();
+        alert(`Error al guardar colaborador: ${errorData.error}`);
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Error de red al registrar el colaborador.');
+    }
+  };
+
   const handleRequestAIExplanation = async (candidate: any) => {
     setExplainingId(candidate.employeeId);
     setAiExplanation(null);
@@ -206,7 +306,7 @@ export default function StaffingModule({
   const onBenchCount = employees.filter(e => e.availabilityPercent === 100 && e.status === 'Active').length;
   const benchRate = Math.round((onBenchCount / employees.length) * 100) || 0;
 
-  const isStaffingAuthorized = userRole === 'RRHH' || userRole === 'ResourceManager' || userRole === 'ProjectManager';
+  const isStaffingAuthorized = userRole === 'RRHH' || userRole === 'ProjectManager';
 
   return (
     <div id="staffing-module" className="space-y-6">
@@ -514,6 +614,205 @@ export default function StaffingModule({
                         Buscar Matches <ChevronRight className="h-3 w-3" />
                       </span>
                     </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Plantilla de Colaboradores Card */}
+          <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+            <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <Users className="h-4 w-4 text-slate-500" />
+                Plantilla de Colaboradores ({employees.length})
+              </h3>
+              {isStaffingAuthorized && (
+                <button
+                  id="add-employee-btn"
+                  onClick={() => setShowAddEmployee(!showAddEmployee)}
+                  className="flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition"
+                >
+                  <Plus className="h-3 w-3" /> Nuevo Colaborador
+                </button>
+              )}
+            </div>
+
+            {showAddEmployee && (
+              <form onSubmit={handleCreateEmployee} className="p-4 bg-slate-50 border-b border-slate-200 space-y-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">Nombre *</label>
+                    <input
+                      type="text"
+                      placeholder="Juan"
+                      value={newEmployee.name}
+                      onChange={e => setNewEmployee({...newEmployee, name: e.target.value})}
+                      className="w-full text-xs border border-slate-300 rounded p-1 bg-white"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">Apellidos *</label>
+                    <input
+                      type="text"
+                      placeholder="Pérez Gómez"
+                      value={newEmployee.surname}
+                      onChange={e => setNewEmployee({...newEmployee, surname: e.target.value})}
+                      className="w-full text-xs border border-slate-300 rounded p-1 bg-white"
+                      required
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">Email (Opcional)</label>
+                    <input
+                      type="email"
+                      placeholder="juan.perez@itconsulting.com"
+                      value={newEmployee.email}
+                      onChange={e => setNewEmployee({...newEmployee, email: e.target.value})}
+                      className="w-full text-xs border border-slate-300 rounded p-1 bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">Departamento</label>
+                    <select
+                      value={newEmployee.department}
+                      onChange={e => setNewEmployee({...newEmployee, department: e.target.value})}
+                      className="w-full text-xs border border-slate-300 rounded p-1 bg-white"
+                    >
+                      <option value="Software Engineering">Software Engineering</option>
+                      <option value="Architecture & Tech Leadership">Architecture & Tech Leadership</option>
+                      <option value="Project & Product Management">Project & Product Management</option>
+                      <option value="Consulting">Consulting</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">Path de Carrera</label>
+                    <select
+                      value={newEmployee.currentCareerPathId}
+                      onChange={e => setNewEmployee({...newEmployee, currentCareerPathId: e.target.value})}
+                      className="w-full text-xs border border-slate-300 rounded p-1 bg-white"
+                    >
+                      {careerPaths.map(cp => (
+                        <option key={cp.id} value={cp.id}>{cp.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">Nivel de Entrada</label>
+                    <select
+                      value={newEmployee.currentLevelId}
+                      onChange={e => setNewEmployee({...newEmployee, currentLevelId: e.target.value})}
+                      className="w-full text-xs border border-slate-300 rounded p-1 bg-white"
+                    >
+                      {careerLevels.map(cl => (
+                        <option key={cl.id} value={cl.id}>{cl.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">País</label>
+                    <input
+                      type="text"
+                      value={newEmployee.country}
+                      onChange={e => setNewEmployee({...newEmployee, country: e.target.value})}
+                      className="w-full text-xs border border-slate-300 rounded p-1 bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">Oficina</label>
+                    <input
+                      type="text"
+                      value={newEmployee.office}
+                      onChange={e => setNewEmployee({...newEmployee, office: e.target.value})}
+                      className="w-full text-xs border border-slate-300 rounded p-1 bg-white"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">Disponibilidad (%)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={newEmployee.availabilityPercent}
+                      onChange={e => setNewEmployee({...newEmployee, availabilityPercent: Number(e.target.value)})}
+                      className="w-full text-xs border border-slate-300 rounded p-1 bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">Supervisor / Manager</label>
+                    <select
+                      value={newEmployee.managerId}
+                      onChange={e => setNewEmployee({...newEmployee, managerId: e.target.value})}
+                      className="w-full text-xs border border-slate-300 rounded p-1 bg-white"
+                    >
+                      {employees.filter(emp => ['L4', 'L5', 'L6'].includes(emp.currentLevelId)).map(mgr => (
+                        <option key={mgr.employeeId} value={mgr.employeeId}>{mgr.name} {mgr.surname}</option>
+                      ))}
+                      <option value="E004">Daniela Vega Soler (Por defecto)</option>
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">Skills Iniciales (separadas por comas)</label>
+                  <input
+                    type="text"
+                    placeholder="React, AWS, Node.js"
+                    value={newEmployee.skills}
+                    onChange={e => setNewEmployee({...newEmployee, skills: e.target.value})}
+                    className="w-full text-xs border border-slate-300 rounded p-1 bg-white"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  className="w-full bg-indigo-600 text-white rounded text-xs py-1.5 font-semibold hover:bg-indigo-700 transition"
+                >
+                  Registrar Colaborador
+                </button>
+              </form>
+            )}
+
+            <div className="divide-y divide-slate-100 max-h-[300px] overflow-y-auto">
+              {employees.map((emp) => {
+                const pathName = careerPaths.find(p => p.id === emp.currentCareerPathId)?.name || 'Especialista';
+                const levelName = careerLevels.find(l => l.id === emp.currentLevelId)?.name || 'Consultor';
+                const availColor = 
+                  emp.availabilityPercent >= 80 ? 'text-emerald-700 bg-emerald-50' :
+                  emp.availabilityPercent >= 30 ? 'text-amber-700 bg-amber-50' :
+                  'text-slate-600 bg-slate-100';
+
+                return (
+                  <div key={emp.employeeId} className="p-3 hover:bg-slate-50 transition">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <span className="text-[10px] font-mono bg-slate-100 text-slate-600 px-1 py-0.5 rounded font-bold">
+                          {emp.employeeId}
+                        </span>
+                        <h4 className="text-xs font-bold text-slate-900 mt-1">{emp.name} {emp.surname}</h4>
+                        <p className="text-[11px] text-slate-500">{pathName} | <span className="font-semibold">{levelName}</span></p>
+                        <p className="text-[11px] text-slate-400 mt-0.5">{emp.email}</p>
+                      </div>
+                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${availColor}`}>
+                        Disp: {emp.availabilityPercent}%
+                      </span>
+                    </div>
+                    {emp.skills && emp.skills.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-2">
+                        {emp.skills.map(s => (
+                          <span key={s.skillId || s.name} className="text-[9px] bg-slate-100 text-slate-700 px-1.5 rounded">
+                            {s.name}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 );
               })}

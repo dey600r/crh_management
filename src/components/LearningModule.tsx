@@ -62,6 +62,34 @@ export default function LearningModule({
     ]
   });
 
+  // Editing checkpoint states
+  const [editingCheckpointId, setEditingCheckpointId] = useState<string | null>(null);
+  const [editingCheckpoint, setEditingCheckpoint] = useState<CheckpointReview | null>(null);
+
+  const handleSaveEditedCheckpoint = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingCheckpoint) return;
+
+    try {
+      const res = await fetch(`/api/checkpoints/${editingCheckpoint.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editingCheckpoint)
+      });
+      if (res.ok) {
+        alert('Checkpoint actualizado correctamente.');
+        onDataRefresh();
+        setEditingCheckpointId(null);
+        setEditingCheckpoint(null);
+      } else {
+        alert('Error al actualizar el checkpoint.');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Error de conexión al guardar el checkpoint.');
+    }
+  };
+
   // Get active selected employee objects
   const selectedEmployee = employees.find(e => e.employeeId === selectedEmpId) || employees[0];
   const selectedPlan = devPlans.find(p => p.employeeId === selectedEmpId);
@@ -180,7 +208,7 @@ export default function LearningModule({
     setNewCheckpoint(prev => ({ ...prev, scores: updatedScores }));
   };
 
-  const isCheckpointAuthorized = userRole === 'RRHH' || userRole === 'ProjectManager' || userRole === 'ResourceManager';
+  const isCheckpointAuthorized = userRole === 'RRHH' || userRole === 'ProjectManager';
 
   return (
     <div id="learning-module" className="space-y-6">
@@ -571,6 +599,156 @@ export default function LearningModule({
             <div className="space-y-4">
               {checkpoints.map((cp) => {
                 const emp = employees.find(e => e.employeeId === cp.employeeId);
+                const isEditing = editingCheckpointId === cp.id && editingCheckpoint;
+                
+                if (isEditing) {
+                  return (
+                    <div key={cp.id} className="border-2 border-indigo-500 rounded-xl p-4 bg-slate-50 space-y-4 shadow-md transition-all">
+                      <div className="flex justify-between items-center border-b pb-2">
+                        <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider bg-indigo-50 px-2 py-0.5 rounded">
+                          Modo Edición • {cp.id}
+                        </span>
+                        <h4 className="text-xs font-bold text-slate-900">
+                          {emp ? `${emp.name} ${emp.surname}` : 'Colaborador'}
+                        </h4>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Proyecto</label>
+                          <select
+                            value={editingCheckpoint.projectId}
+                            onChange={e => setEditingCheckpoint({...editingCheckpoint, projectId: e.target.value})}
+                            className="w-full text-xs border border-slate-300 rounded p-1 bg-white font-medium"
+                          >
+                            <option value="PRJ001">Banco Santander Cloud</option>
+                            <option value="PRJ002">Mercadona E-Commerce</option>
+                            <option value="PRJ003">Telefónica IoT Analytics</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Frecuencia</label>
+                          <select
+                            value={editingCheckpoint.reviewType}
+                            onChange={e => setEditingCheckpoint({...editingCheckpoint, reviewType: e.target.value as any})}
+                            className="w-full text-xs border border-slate-300 rounded p-1 bg-white font-medium"
+                          >
+                            <option value="Monthly">Mensual</option>
+                            <option value="Quarterly">Trimestral</option>
+                            <option value="MidProject">Mitad de Proyecto</option>
+                            <option value="EndProject">Cierre de Proyecto</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Scores */}
+                      <div className="space-y-2">
+                        <span className="text-[10px] font-bold text-slate-500 uppercase block">Competencias (Escala 1 a 5)</span>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {competencies.map((comp) => {
+                            const scoreObj = editingCheckpoint.scores.find(s => s.competencyId === comp.id);
+                            const scoreVal = scoreObj ? scoreObj.score : 4;
+                            return (
+                              <div key={comp.id} className="flex items-center justify-between bg-white border p-1.5 rounded text-xs shadow-xs">
+                                <span className="truncate max-w-[150px] font-medium text-slate-700">{comp.name}</span>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  max="5"
+                                  value={scoreVal}
+                                  onChange={e => {
+                                    const val = Math.max(1, Math.min(5, Number(e.target.value)));
+                                    const updatedScores = editingCheckpoint.scores.map(s => 
+                                      s.competencyId === comp.id ? { ...s, score: val } : s
+                                    );
+                                    if (!editingCheckpoint.scores.some(s => s.competencyId === comp.id)) {
+                                      updatedScores.push({ competencyId: comp.id, score: val, comments: 'Actualizado.' });
+                                    }
+                                    setEditingCheckpoint({ ...editingCheckpoint, scores: updatedScores });
+                                  }}
+                                  className="w-12 text-center border rounded font-semibold text-slate-900 p-0.5"
+                                />
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* KPIs */}
+                      <div className="space-y-2">
+                        <span className="text-[10px] font-bold text-slate-500 uppercase block">KPIs del Proyecto (Escala 1 a 5)</span>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                          {editingCheckpoint.kpis.map((k, idx) => (
+                            <div key={k.kpi} className="bg-white border p-2 rounded text-xs space-y-1.5 shadow-xs">
+                              <span className="font-semibold text-slate-800 block text-center truncate">{k.kpi}</span>
+                              <div className="flex items-center justify-between text-[10px]">
+                                <span>Meta:</span>
+                                <input
+                                  type="number"
+                                  step="0.1"
+                                  value={k.targetValue}
+                                  onChange={e => {
+                                    const updatedKPIs = [...editingCheckpoint.kpis];
+                                    updatedKPIs[idx] = { ...updatedKPIs[idx], targetValue: Number(e.target.value) };
+                                    setEditingCheckpoint({ ...editingCheckpoint, kpis: updatedKPIs });
+                                  }}
+                                  className="w-11 text-center border rounded"
+                                />
+                              </div>
+                              <div className="flex items-center justify-between text-[10px]">
+                                <span>Real:</span>
+                                <input
+                                  type="number"
+                                  step="0.1"
+                                  value={k.currentValue}
+                                  onChange={e => {
+                                    const updatedKPIs = [...editingCheckpoint.kpis];
+                                    updatedKPIs[idx] = { ...updatedKPIs[idx], currentValue: Number(e.target.value) };
+                                    setEditingCheckpoint({ ...editingCheckpoint, kpis: updatedKPIs });
+                                  }}
+                                  className="w-11 text-center border rounded font-bold text-indigo-600"
+                                />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Comments */}
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase">Comentarios Generales del Desempeño</label>
+                        <textarea
+                          placeholder="Escribe comentarios de desempeño..."
+                          value={editingCheckpoint.comments}
+                          onChange={e => setEditingCheckpoint({...editingCheckpoint, comments: e.target.value})}
+                          className="w-full text-xs border border-slate-300 rounded p-1.5 bg-white h-16 focus:outline-none focus:border-indigo-500"
+                          required
+                        />
+                      </div>
+
+                      <div className="flex justify-end gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingCheckpointId(null);
+                            setEditingCheckpoint(null);
+                          }}
+                          className="text-xs text-slate-600 bg-white border border-slate-200 hover:bg-slate-100 font-semibold px-3 py-1.5 rounded transition"
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleSaveEditedCheckpoint}
+                          className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-4 py-1.5 rounded transition shadow-xs"
+                        >
+                          Guardar Checkpoint
+                        </button>
+                      </div>
+                    </div>
+                  );
+                }
+
                 return (
                   <div key={cp.id} className="border border-slate-150 rounded-xl p-3 bg-slate-50/30">
                     <div className="flex justify-between items-start border-b border-slate-100 pb-2 mb-2">
@@ -583,8 +761,19 @@ export default function LearningModule({
                         </h4>
                         <p className="text-[10px] text-slate-400">Evaluado en: {cp.reviewDate}</p>
                       </div>
-                      <div className="text-right">
+                      <div className="text-right flex flex-col items-end gap-1.5">
                         <span className="text-[10px] text-slate-500">Evaluador ID: {cp.reviewerId}</span>
+                        {isCheckpointAuthorized && (
+                          <button
+                            onClick={() => {
+                              setEditingCheckpointId(cp.id);
+                              setEditingCheckpoint(JSON.parse(JSON.stringify(cp)));
+                            }}
+                            className="text-[10px] text-indigo-600 hover:text-indigo-800 font-semibold bg-indigo-50 hover:bg-indigo-100 px-2 py-0.5 rounded transition"
+                          >
+                            Editar
+                          </button>
+                        )}
                       </div>
                     </div>
 
@@ -598,7 +787,7 @@ export default function LearningModule({
                         <span className="text-[9px] font-bold text-slate-500 uppercase block mb-1.5">KPIs de Proyecto</span>
                         <div className="space-y-1">
                           {cp.kpis.map(k => (
-                            <div key={k.id} className="text-[10px] flex items-center justify-between bg-white p-1 rounded border border-slate-100">
+                            <div key={k.kpi} className="text-[10px] flex items-center justify-between bg-white p-1 rounded border border-slate-100">
                               <span className="text-slate-600">{k.kpi}</span>
                               <span className="font-semibold text-slate-900">
                                 {k.currentValue} / {k.targetValue}

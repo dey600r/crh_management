@@ -16,16 +16,9 @@ export default function RoleSwitcher({ currentRole, onRoleChange }: RoleSwitcher
       color: 'bg-indigo-50 border-indigo-200 text-indigo-700'
     },
     {
-      value: 'ResourceManager',
-      label: 'Resource Manager',
-      desc: 'Staffing de proyectos, bench y matching técnico',
-      icon: Users,
-      color: 'bg-emerald-50 border-emerald-200 text-emerald-700'
-    },
-    {
       value: 'ProjectManager',
       label: 'Project Manager',
-      desc: 'Checkpoints de rendimiento y kpis de entrega',
+      desc: 'Staffing de proyectos, checkpoints de rendimiento y KPIs de entrega',
       icon: Briefcase,
       color: 'bg-amber-50 border-amber-200 text-amber-700'
     },

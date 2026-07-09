@@ -274,5 +274,5 @@ export interface ChatMessage {
   timestamp: string;
 }
 
-export type UserRole = 'RRHH' | 'ResourceManager' | 'ProjectManager' | 'Colaborador';
+export type UserRole = 'RRHH' | 'ProjectManager' | 'Colaborador';
 

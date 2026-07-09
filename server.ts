@@ -242,7 +242,70 @@ async function startServer() {
         id: `CK_${Date.now()}`
       };
       const added = await dbStoreInstance.addCheckpoint(newCp);
+
+      // Auto-create an annual evaluation draft if none exists for this employee for 2025
+      try {
+        const evs = await dbStoreInstance.getAnnualEvaluations();
+        const existingEv = evs.find(e => e.employeeId === cp.employeeId);
+        if (!existingEv) {
+          const emp = await dbStoreInstance.getEmployee(cp.employeeId);
+          if (emp) {
+            const newLvlNum = parseInt(emp.currentLevelId.replace('L', '')) || 1;
+            const nextLvlNum = Math.min(6, newLvlNum + 1);
+            const targetLevelId = `L${nextLvlNum}`;
+            
+            const newEval: AnnualEvaluation = {
+              evaluationId: `EV_${Date.now()}`,
+              employeeId: cp.employeeId,
+              year: 2025,
+              currentLevelId: emp.currentLevelId,
+              targetLevelId: targetLevelId,
+              status: 'Draft',
+              finalScore: 3.0,
+              evaluationResult: 'MeetsExpectations',
+              dimensions: [
+                { id: `d_comp_${Date.now()}`, dimension: 'Competencies', weight: 40, score: 3.0 },
+                { id: `d_perf_${Date.now()}`, dimension: 'ProjectPerformance', weight: 30, score: 3.0 },
+                { id: `d_train_${Date.now()}`, dimension: 'Training', weight: 15, score: 3.0 },
+                { id: `d_f360_${Date.now()}`, dimension: 'Feedback360', weight: 10, score: 3.0 },
+                { id: `d_corp_${Date.now()}`, dimension: 'CorporateContribution', weight: 5, score: 3.0 }
+              ],
+              competencies: [
+                { id: `c_c1_${Date.now()}`, competencyId: 'CLIENT_ORIENTATION', expectedStage: 'B', actualStage: 'B', score: 3.0, gap: 0 },
+                { id: `c_c2_${Date.now()}`, competencyId: 'INNOVATION', expectedStage: 'B', actualStage: 'B', score: 3.0, gap: 0 },
+                { id: `c_c3_${Date.now()}`, competencyId: 'HUMAN_RELATIONS', expectedStage: 'B', actualStage: 'B', score: 3.0, gap: 0 },
+                { id: `c_c4_${Date.now()}`, competencyId: 'TEAM_LEADERSHIP', expectedStage: 'A', actualStage: 'B', score: 3.0, gap: 0 },
+                { id: `c_c5_${Date.now()}`, competencyId: 'ORGANIZATION_RESULTS', expectedStage: 'B', actualStage: 'B', score: 3.0, gap: 0 },
+                { id: `c_c6_${Date.now()}`, competencyId: 'PROFESSIONAL_OPENNESS', expectedStage: 'B', actualStage: 'B', score: 3.0, gap: 0 }
+              ],
+              commentsManager: 'Evaluación inicial auto-generada tras registro de checkpoint continuo.',
+              commentsHR: '',
+              promotionRecommendation: {
+                ready: false,
+                reason: 'Pendiente de calibración.'
+              }
+            };
+            await dbStoreInstance.addAnnualEvaluation(newEval);
+          }
+        }
+      } catch (err) {
+        console.error('Error auto-creating evaluation draft on checkpoint:', err);
+      }
+
       res.status(201).json(added);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.put('/api/checkpoints/:id', async (req, res) => {
+    try {
+      const id = req.params.id;
+      const updated = await dbStoreInstance.updateCheckpoint(id, req.body);
+      if (!updated) {
+        return res.status(404).json({ error: 'Checkpoint not found' });
+      }
+      res.json(updated);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }

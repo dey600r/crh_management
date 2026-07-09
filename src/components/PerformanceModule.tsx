@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { 
-  Award, ShieldCheck, FileText, CheckCircle, HelpCircle, ArrowRight, Sparkles, Send, AlertTriangle, Scale, Lock
+  Award, ShieldCheck, FileText, CheckCircle, HelpCircle, ArrowRight, Sparkles, Send, AlertTriangle, Scale, Lock, Plus, Users
 } from 'lucide-react';
 import { AnnualEvaluation, Employee, CheckpointReview, UserRole } from '../types';
 import { MarkdownView } from './MarkdownView';
@@ -12,6 +12,7 @@ interface PerformanceModuleProps {
   checkpoints: CheckpointReview[];
   careerLevels: any[];
   careerPaths: any[];
+  competencies: any[];
   onDataRefresh: () => void;
 }
 
@@ -22,6 +23,7 @@ export default function PerformanceModule({
   checkpoints,
   careerLevels,
   careerPaths,
+  competencies,
   onDataRefresh
 }: PerformanceModuleProps) {
   const [selectedEval, setSelectedEval] = useState<AnnualEvaluation | null>(null);
@@ -34,6 +36,114 @@ export default function PerformanceModule({
   // Edit states
   const [managerComment, setManagerComment] = useState('');
   const [hrComment, setHrComment] = useState('');
+
+  // Handle Dimension Score Updates
+  const handleUpdateDimensionScore = async (dimId: string, newScore: number) => {
+    if (!selectedEval) return;
+    
+    // Clamp score to 1-5
+    const clampedScore = Math.max(1, Math.min(5, Number(newScore)));
+    
+    const updatedDimensions = selectedEval.dimensions.map(d => {
+      if (d.id === dimId) {
+        return { ...d, score: clampedScore };
+      }
+      return d;
+    });
+
+    // Recalculate final score using weights
+    let weightedSum = 0;
+    updatedDimensions.forEach(d => {
+      weightedSum += d.score * (d.weight / 100);
+    });
+    const newFinalScore = Number(weightedSum.toFixed(2));
+
+    // Determine result based on finalScore
+    let result: 'Unsatisfactory' | 'MeetsExpectations' | 'ExceedsExpectations' | 'Outstanding' | 'Promoted' = 'MeetsExpectations';
+    if (newFinalScore >= 4.5) {
+      result = 'Outstanding';
+    } else if (newFinalScore >= 4.0) {
+      result = 'ExceedsExpectations';
+    } else if (newFinalScore >= 3.0) {
+      result = 'MeetsExpectations';
+    } else {
+      result = 'Unsatisfactory';
+    }
+
+    try {
+      const res = await fetch(`/api/annual-evaluations/${selectedEval.evaluationId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          dimensions: updatedDimensions,
+          finalScore: newFinalScore,
+          evaluationResult: result
+        })
+      });
+      if (res.ok) {
+        onDataRefresh();
+        const updated = await res.json();
+        setSelectedEval(updated);
+      }
+    } catch (err) {
+      console.error('Error updating dimension score:', err);
+    }
+  };
+
+  // Handle Starting a new Annual Evaluation
+  const handleCreateEvaluation = async (empId: string) => {
+    const emp = employees.find(e => e.employeeId === empId);
+    if (!emp) return;
+
+    const newLvlNum = parseInt(emp.currentLevelId.replace('L', '')) || 1;
+    const nextLvlNum = Math.min(6, newLvlNum + 1);
+    const targetLevelId = `L${nextLvlNum}`;
+
+    const newEvalPayload = {
+      employeeId: empId,
+      year: 2025,
+      currentLevelId: emp.currentLevelId,
+      targetLevelId: targetLevelId,
+      status: 'Draft' as const,
+      finalScore: 3.0,
+      evaluationResult: 'MeetsExpectations' as const,
+      dimensions: [
+        { id: `d_comp_${Date.now()}`, dimension: 'Competencies', weight: 40, score: 3.0 },
+        { id: `d_perf_${Date.now()}`, dimension: 'ProjectPerformance', weight: 30, score: 3.0 },
+        { id: `d_train_${Date.now()}`, dimension: 'Training', weight: 15, score: 3.0 },
+        { id: `d_f360_${Date.now()}`, dimension: 'Feedback360', weight: 10, score: 3.0 },
+        { id: `d_corp_${Date.now()}`, dimension: 'CorporateContribution', weight: 5, score: 3.0 }
+      ],
+      competencies: [
+        { id: `c_c1_${Date.now()}`, competencyId: 'CLIENT_ORIENTATION', expectedStage: 'B', actualStage: 'B', score: 3.0, gap: 0 },
+        { id: `c_c2_${Date.now()}`, competencyId: 'INNOVATION', expectedStage: 'B', actualStage: 'B', score: 3.0, gap: 0 },
+        { id: `c_c3_${Date.now()}`, competencyId: 'HUMAN_RELATIONS', expectedStage: 'B', actualStage: 'B', score: 3.0, gap: 0 },
+        { id: `c_c4_${Date.now()}`, competencyId: 'TEAM_LEADERSHIP', expectedStage: 'A', actualStage: 'B', score: 3.0, gap: 0 },
+        { id: `c_c5_${Date.now()}`, competencyId: 'ORGANIZATION_RESULTS', expectedStage: 'B', actualStage: 'B', score: 3.0, gap: 0 },
+        { id: `c_c6_${Date.now()}`, competencyId: 'PROFESSIONAL_OPENNESS', expectedStage: 'B', actualStage: 'B', score: 3.0, gap: 0 }
+      ],
+      commentsManager: 'Ciclo de evaluación iniciado por el Manager.',
+      commentsHR: '',
+      promotionRecommendation: {
+        ready: false,
+        reason: 'Pendiente de calibración.'
+      }
+    };
+
+    try {
+      const res = await fetch('/api/annual-evaluations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newEvalPayload)
+      });
+      if (res.ok) {
+        onDataRefresh();
+        alert(`Ciclo de evaluación anual iniciado correctamente para ${emp.name} ${emp.surname}.`);
+      }
+    } catch (err) {
+      console.error('Error starting evaluation cycle:', err);
+    }
+  };
 
   // Formula constants
   const FORMULA = [
@@ -113,7 +223,7 @@ export default function PerformanceModule({
   };
 
   const isHR = userRole === 'RRHH';
-  const isManager = userRole === 'ProjectManager' || userRole === 'ResourceManager' || userRole === 'RRHH';
+  const isManager = userRole === 'ProjectManager' || userRole === 'RRHH';
 
   return (
     <div id="performance-module" className="space-y-6">
@@ -204,6 +314,46 @@ export default function PerformanceModule({
               })}
             </div>
           </div>
+
+          {/* Card: Colaboradores sin Evaluación Activa */}
+          <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-4">
+            <h3 className="text-sm font-bold text-slate-900 mb-3 flex items-center gap-2">
+              <Users className="h-4 w-4 text-indigo-600" />
+              Colaboradores sin Evaluación Anual ({employees.filter(emp => !evaluations.some(ev => ev.employeeId === emp.employeeId)).length})
+            </h3>
+            <p className="text-xs text-slate-500 mb-3">
+              Estos colaboradores están registrados en la plantilla pero no tienen abierto un expediente para el ciclo actual. Haz clic en "Iniciar" para abrir su proceso.
+            </p>
+            {employees.filter(emp => !evaluations.some(ev => ev.employeeId === emp.employeeId)).length === 0 ? (
+              <p className="text-xs text-slate-400 italic bg-slate-50 p-3 rounded-lg border border-slate-150">
+                Todos los colaboradores tienen un proceso de evaluación abierto.
+              </p>
+            ) : (
+              <div className="space-y-2 max-h-[250px] overflow-y-auto">
+                {employees
+                  .filter(emp => !evaluations.some(ev => ev.employeeId === emp.employeeId))
+                  .map((emp) => (
+                    <div key={emp.employeeId} className="flex justify-between items-center p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs">
+                      <div>
+                        <span className="text-[10px] font-mono bg-slate-200 text-slate-700 px-1 py-0.5 rounded font-bold mr-1">
+                          {emp.employeeId}
+                        </span>
+                        <strong className="text-slate-900">{emp.name} {emp.surname}</strong>
+                        <div className="text-[10px] text-slate-500">
+                          {careerPaths.find(p => p.id === emp.currentCareerPathId)?.name || 'Especialista'} | {careerLevels.find(l => l.id === emp.currentLevelId)?.levelCode}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleCreateEvaluation(emp.employeeId)}
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-[10px] px-2.5 py-1 rounded transition flex items-center gap-0.5"
+                      >
+                        <Plus className="h-3 w-3" /> Iniciar
+                      </button>
+                    </div>
+                  ))}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Right Column: Deep Score Evaluation Report Card */}
@@ -247,13 +397,30 @@ export default function PerformanceModule({
                 <div className="space-y-3">
                   {selectedEval.dimensions.map((dim) => {
                     const formulaDef = FORMULA.find(f => f.label.toLowerCase().includes(dim.dimension.toLowerCase().substring(0, 5))) || FORMULA[0];
+                    const canEdit = userRole === 'RRHH' || userRole === 'ProjectManager';
+                    
                     return (
                       <div key={dim.id} className="bg-slate-50 border border-slate-150 rounded-lg p-2.5">
                         <div className="flex justify-between items-center text-xs mb-1">
                           <span className="font-semibold text-slate-800">{dim.dimension}</span>
-                          <span className="text-[10px] text-slate-500 font-bold">
-                            Peso: {dim.weight}% | Score: <strong className="text-indigo-600">{dim.score}/5</strong>
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-slate-500 font-medium">
+                              Peso: {dim.weight}% | Score:
+                            </span>
+                            {canEdit && selectedEval.status !== 'Closed' ? (
+                              <input
+                                type="number"
+                                min="1.0"
+                                max="5.0"
+                                step="0.1"
+                                value={dim.score}
+                                onChange={(e) => handleUpdateDimensionScore(dim.id, Number(e.target.value))}
+                                className="w-14 text-xs font-bold text-indigo-600 bg-white border border-slate-300 rounded px-1 text-center py-0.5 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                              />
+                            ) : (
+                              <strong className="text-indigo-600">{dim.score}/5</strong>
+                            )}
+                          </div>
                         </div>
                         <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
                           <div 
@@ -265,6 +432,78 @@ export default function PerformanceModule({
                     );
                   })}
                 </div>
+              </div>
+
+              {/* Checkpoints Continuos del Colaborador */}
+              <div className="border-t border-slate-100 pt-4">
+                <h4 className="text-xs font-bold text-slate-900 mb-3 uppercase tracking-wider text-slate-500">
+                  Historial de Checkpoints de Rendimiento (Evaluación Continua)
+                </h4>
+                {checkpoints.filter(chk => chk.employeeId === selectedEval.employeeId).length === 0 ? (
+                  <div className="text-xs text-slate-500 italic bg-slate-50 p-4 rounded-xl border border-slate-150 space-y-1">
+                    <p className="font-semibold text-slate-700">No hay checkpoints continuos registrados aún.</p>
+                    <p className="text-[11px] text-slate-400">Puedes registrar checkpoints en la sección "Desarrollo y Checkpoints" para que sirvan de base para calibrar esta evaluación.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {checkpoints
+                      .filter(chk => chk.employeeId === selectedEval.employeeId)
+                      .map((chk) => (
+                        <div key={chk.id} className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2.5 shadow-xs">
+                          <div className="flex justify-between items-center border-b border-slate-200/50 pb-1.5">
+                            <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                              {chk.reviewType} • {chk.reviewDate}
+                            </span>
+                            <span className="text-[10px] text-slate-500 font-medium">
+                              Proyecto: <strong className="text-slate-700">{chk.projectId}</strong>
+                            </span>
+                          </div>
+                          
+                          {chk.comments && (
+                            <p className="text-xs text-slate-600 italic bg-white p-2.5 rounded-lg border border-slate-150 leading-relaxed">
+                              "{chk.comments}"
+                            </p>
+                          )}
+
+                          {/* Checkpoint Scores and KPIs breakdown */}
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+                            {chk.scores && chk.scores.length > 0 && (
+                              <div className="space-y-1">
+                                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Competencias del Checkpoint</span>
+                                <div className="space-y-1">
+                                  {chk.scores.map(sc => {
+                                    const compName = competencies.find(c => c.id === sc.competencyId)?.name || sc.competencyId;
+                                    return (
+                                      <div key={sc.competencyId} className="text-[10px] flex justify-between items-center bg-white px-2 py-1 rounded border border-slate-150">
+                                        <span className="text-slate-500 truncate max-w-[130px] font-medium">{compName}</span>
+                                        <strong className="text-indigo-600 font-bold bg-indigo-50 px-1 py-0.5 rounded">{sc.score}/5</strong>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+
+                            {chk.kpis && chk.kpis.length > 0 && (
+                              <div className="space-y-1">
+                                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">KPIs Medidos</span>
+                                <div className="space-y-1">
+                                  {chk.kpis.map(kp => (
+                                    <div key={kp.id || kp.kpi} className="text-[10px] flex justify-between items-center bg-white px-2 py-1 rounded border border-slate-150">
+                                      <span className="text-slate-500 truncate font-medium">{kp.kpi}</span>
+                                      <span className="font-semibold">
+                                        <strong className="text-emerald-600">{kp.currentValue}</strong> <span className="text-slate-300">/</span> <span className="text-slate-400">{kp.targetValue}</span>
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                )}
               </div>
 
               {/* Promo recommendation */}

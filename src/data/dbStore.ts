@@ -754,6 +754,25 @@ export class DatabaseStore {
     }
   }
 
+  async updateCheckpoint(id: string, updated: Partial<CheckpointReview>): Promise<CheckpointReview | null> {
+    if (!db) {
+      const idx = this.memCheckpoints.findIndex(e => e.id === id);
+      if (idx !== -1) {
+        this.memCheckpoints[idx] = { ...this.memCheckpoints[idx], ...updated } as CheckpointReview;
+        return this.memCheckpoints[idx];
+      }
+      return null;
+    }
+    try {
+      await updateDoc(doc(db, 'checkpoints', id), updated);
+      const docSnap = await getDoc(doc(db, 'checkpoints', id));
+      return docSnap.exists() ? (docSnap.data() as CheckpointReview) : null;
+    } catch (err) {
+      console.error(`[Firestore] Error updating checkpoint ${id}:`, err);
+      return null;
+    }
+  }
+
   async updateAnnualEvaluation(id: string, updated: Partial<AnnualEvaluation>): Promise<AnnualEvaluation | null> {
     if (!db) {
       const idx = this.memAnnualEvaluations.findIndex(e => e.evaluationId === id);
