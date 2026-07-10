@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { 
   Award, ShieldCheck, FileText, CheckCircle, HelpCircle, ArrowRight, Sparkles, Send, AlertTriangle, Scale, Lock, Plus, Users
 } from 'lucide-react';
-import { AnnualEvaluation, Employee, CheckpointReview, UserRole } from '../types';
+import { AnnualEvaluation, Employee, CheckpointReview, UserRole, CompetencyStage, getRequiredStage, scoreToStage, stageToScore } from '../types';
 import { MarkdownView } from './MarkdownView';
 
 interface PerformanceModuleProps {
@@ -505,6 +505,244 @@ export default function PerformanceModule({
                   </div>
                 )}
               </div>
+ 
+              {/* Diagnóstico Integral SSTD (Medición de Etapas y Progresión) */}
+              {(() => {
+                const emp = employees.find(e => e.employeeId === selectedEval.employeeId);
+                if (!emp) return null;
+
+                const empCheckpoints = checkpoints
+                  .filter(chk => chk.employeeId === selectedEval.employeeId)
+                  .sort((a, b) => new Date(a.reviewDate).getTime() - new Date(b.reviewDate).getTime());
+
+                // 1. Determine actual stage per competency
+                // We aggregate latest checkpoint stage or fall back to annual eval / scoreToStage
+                const actualCompetencyStatus = competencies.map(comp => {
+                  const reqStageCurrent = getRequiredStage(emp.currentCareerPathId, emp.currentLevelId, comp.id);
+                  
+                  // Get next level target stage
+                  const currentLvlNum = parseInt(emp.currentLevelId.replace('L', '')) || 1;
+                  const targetLvlId = `L${Math.min(7, currentLvlNum + 1)}`;
+                  const reqStageTarget = getRequiredStage(emp.currentCareerPathId, targetLvlId, comp.id);
+
+                  // Find latest checkpoint score and stage for this competency
+                  let latestScore = 3.0;
+                  let latestStage: CompetencyStage = 'B';
+                  let hasCheckpointValue = false;
+
+                  if (empCheckpoints.length > 0) {
+                    for (let i = empCheckpoints.length - 1; i >= 0; i--) {
+                      const scoreItem = empCheckpoints[i].scores?.find(s => s.competencyId === comp.id);
+                      if (scoreItem) {
+                        latestScore = scoreItem.score;
+                        latestStage = scoreItem.stage || scoreToStage(scoreItem.score);
+                        hasCheckpointValue = true;
+                        break;
+                      }
+                    }
+                  }
+
+                  // If no checkpoints, try evaluation competency
+                  if (!hasCheckpointValue) {
+                    const evalComp = selectedEval.competencies?.find(c => c.competencyId === comp.id);
+                    if (evalComp) {
+                      latestScore = evalComp.score || 3.0;
+                      latestStage = (evalComp.actualStage as CompetencyStage) || scoreToStage(latestScore);
+                    } else {
+                      latestStage = scoreToStage(latestScore);
+                    }
+                  }
+
+                  // Calculate progression if multiple checkpoints exist
+                  let progressionText = "Estable";
+                  let progressionColor = "text-slate-500";
+                  if (empCheckpoints.length > 1) {
+                    let firstScore = 0;
+                    let firstStage: CompetencyStage | null = null;
+                    
+                    // Find first checkpoint score/stage for this competency
+                    for (let i = 0; i < empCheckpoints.length; i++) {
+                      const scoreItem = empCheckpoints[i].scores?.find(s => s.competencyId === comp.id);
+                      if (scoreItem) {
+                        firstScore = scoreItem.score;
+                        firstStage = scoreItem.stage || scoreToStage(scoreItem.score);
+                        break;
+                      }
+                    }
+
+                    if (firstStage) {
+                      const stageOrder = ['A', 'B', 'C', 'D', 'E'];
+                      const firstIdx = stageOrder.indexOf(firstStage);
+                      const latestIdx = stageOrder.indexOf(latestStage);
+                      if (latestIdx > firstIdx) {
+                        progressionText = `▲ Subió de ${firstStage} a ${latestStage}`;
+                        progressionColor = "text-emerald-600 font-bold";
+                      } else if (latestIdx < firstIdx) {
+                        progressionText = `▼ Bajó de ${firstStage} a ${latestStage}`;
+                        progressionColor = "text-rose-600";
+                      } else if (latestScore > firstScore) {
+                        progressionText = `▲ Nota mejoró (${firstScore} ➔ ${latestScore})`;
+                        progressionColor = "text-emerald-500";
+                      } else {
+                        progressionText = "Consolidado";
+                        progressionColor = "text-slate-400";
+                      }
+                    }
+                  } else if (empCheckpoints.length === 1) {
+                    progressionText = "Un solo checkpoint registrado";
+                    progressionColor = "text-slate-400";
+                  } else {
+                    progressionText = "Sin checkpoints (Evaluación inicial)";
+                    progressionColor = "text-slate-400";
+                  }
+
+                  const stageOrder = ['A', 'B', 'C', 'D', 'E'];
+                  const actualIdx = stageOrder.indexOf(latestStage);
+                  const reqCurrentIdx = stageOrder.indexOf(reqStageCurrent);
+                  const reqTargetIdx = stageOrder.indexOf(reqStageTarget);
+
+                  const meetsCurrent = actualIdx >= reqCurrentIdx;
+                  const meetsTarget = actualIdx >= reqTargetIdx;
+
+                  return {
+                    comp,
+                    latestScore,
+                    latestStage,
+                    reqStageCurrent,
+                    reqStageTarget,
+                    meetsCurrent,
+                    meetsTarget,
+                    progressionText,
+                    progressionColor
+                  };
+                });
+
+                // 2. Aggregate verdicts
+                const unfulfilledCurrent = actualCompetencyStatus.filter(s => !s.meetsCurrent);
+                const unfulfilledTarget = actualCompetencyStatus.filter(s => !s.meetsTarget);
+
+                const isAtCorrectLevel = unfulfilledCurrent.length === 0;
+                const isReadyForPromotion = unfulfilledTarget.length === 0;
+
+                // 3. Evaluate progression within current level
+                // Checked if overall progress is positive or if consolidates current requirements perfectly
+                const hasImprovedInSome = actualCompetencyStatus.some(s => s.progressionText.includes('▲'));
+                const hasRegressionInSome = actualCompetencyStatus.some(s => s.progressionText.includes('▼'));
+                
+                let progressionVerdict = "Consolidación estable.";
+                
+                if (hasImprovedInSome && !hasRegressionInSome) {
+                  progressionVerdict = "Excelente progresión: ha avanzado progresivamente dentro de su nivel.";
+                } else if (isAtCorrectLevel && empCheckpoints.length >= 2) {
+                  progressionVerdict = "Buen desempeño y consistencia: competencias plenamente consolidadas en el nivel.";
+                } else if (hasRegressionInSome) {
+                  progressionVerdict = "Se observan retrocesos en algunas competencias; requiere seguimiento.";
+                } else if (empCheckpoints.length === 0) {
+                  progressionVerdict = "Falta registrar checkpoints de evaluación continua para medir progresión.";
+                }
+
+                return (
+                  <div className="border-t border-slate-100 pt-4 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                        <Scale className="h-4 w-4 text-indigo-600 animate-pulse" />
+                        Diagnóstico de Idoneidad SSTD (Medición de Etapas)
+                      </h4>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      {/* Card 1: Nivel Actual */}
+                      <div className={`p-3 rounded-lg border text-xs space-y-1.5 ${
+                        isAtCorrectLevel ? 'bg-emerald-50/50 border-emerald-150' : 'bg-rose-50/50 border-rose-150'
+                      }`}>
+                        <span className="font-bold uppercase text-[9px] text-slate-500 block">1. Nivel Actual</span>
+                        <div className={`text-xs font-extrabold ${isAtCorrectLevel ? 'text-emerald-700' : 'text-rose-700'}`}>
+                          {isAtCorrectLevel ? '✓ Nivel Correcto' : '⚠ Nivel por Consolidar'}
+                        </div>
+                        <p className="text-[10px] text-slate-600 leading-snug">
+                          {isAtCorrectLevel 
+                            ? 'El colaborador cuenta con las etapas requeridas para su nivel actual en todas las competencias.' 
+                            : `Tiene brechas por cubrir en ${unfulfilledCurrent.length} competencia(s) para consolidar su nivel actual.`
+                          }
+                        </p>
+                      </div>
+
+                      {/* Card 2: Promoción */}
+                      <div className={`p-3 rounded-lg border text-xs space-y-1.5 ${
+                        isReadyForPromotion ? 'bg-indigo-50/50 border-indigo-150 animate-bounce' : 'bg-slate-50 border-slate-200'
+                      }`}>
+                        <span className="font-bold uppercase text-[9px] text-slate-500 block">2. Aptitud para Promoción</span>
+                        <div className={`text-xs font-extrabold ${isReadyForPromotion ? 'text-indigo-700' : 'text-slate-600'}`}>
+                          {isReadyForPromotion ? '★ Listo para Promoción' : '☐ En Consolidación'}
+                        </div>
+                        <p className="text-[10px] text-slate-600 leading-snug">
+                          {isReadyForPromotion 
+                            ? 'Cumple con los requisitos de etapa del siguiente nivel. ¡Recomendado para promoción!' 
+                            : `Aún no cumple el nivel objetivo. Pendiente consolidar ${unfulfilledTarget.length} competencia(s).`
+                          }
+                        </p>
+                      </div>
+
+                      {/* Card 3: Progresión */}
+                      <div className={`p-3 rounded-lg border text-xs space-y-1.5 bg-white border-slate-200`}>
+                        <span className="font-bold uppercase text-[9px] text-slate-500 block">3. Progresión Interna</span>
+                        <div className="text-xs font-extrabold text-slate-800 flex items-center gap-1">
+                          {hasImprovedInSome ? '▲ Progreso Activo' : '● Consolidado'}
+                        </div>
+                        <p className="text-[10px] text-slate-600 leading-snug">
+                          {progressionVerdict}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Breakdown table list of competencies actual vs required current/next */}
+                    <div className="bg-slate-50 border border-slate-150 rounded-lg p-2.5">
+                      <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider pb-1.5 border-b border-slate-200 flex justify-between">
+                        <span>Competencia</span>
+                        <div className="flex gap-4">
+                          <span className="w-14 text-center">Evaluado</span>
+                          <span className="w-12 text-center">Meta Nivel</span>
+                          <span className="w-12 text-center">Meta Prom.</span>
+                          <span className="w-16 text-right">Progreso</span>
+                        </div>
+                      </div>
+
+                      <div className="divide-y divide-slate-200/60">
+                        {actualCompetencyStatus.map(({ comp, latestScore, latestStage, reqStageCurrent, reqStageTarget, meetsCurrent, meetsTarget, progressionText, progressionColor }) => (
+                          <div key={comp.id} className="py-2 flex justify-between items-center text-xs">
+                            <div className="space-y-0.5">
+                              <span className="font-bold text-slate-800 block max-w-[120px] truncate">{comp.name}</span>
+                              <span className="text-[10px] text-slate-400 font-mono">Nota: {latestScore.toFixed(1)}</span>
+                            </div>
+                            <div className="flex gap-4 items-center font-semibold">
+                              {/* Evaluado */}
+                              <span className="w-14 text-center text-[10px] font-extrabold text-indigo-700 bg-indigo-50 border border-indigo-100 py-0.5 rounded uppercase">
+                                Etapa {latestStage.toLowerCase()}
+                              </span>
+                              {/* Meta Nivel */}
+                              <span className={`w-12 text-center text-[10px] font-bold py-0.5 rounded uppercase ${
+                                meetsCurrent ? 'text-emerald-700 bg-emerald-50' : 'text-rose-700 bg-rose-50'
+                              }`}>
+                                {reqStageCurrent.toLowerCase()}
+                              </span>
+                              {/* Meta Promoción */}
+                              <span className={`w-12 text-center text-[10px] font-bold py-0.5 rounded uppercase ${
+                                meetsTarget ? 'text-indigo-700 bg-indigo-50' : 'text-slate-500 bg-slate-100'
+                              }`}>
+                                {reqStageTarget.toLowerCase()}
+                              </span>
+                              {/* Progresión */}
+                              <span className={`w-16 text-right text-[9.5px] truncate ${progressionColor}`}>
+                                {progressionText}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Promo recommendation */}
               <div className="bg-indigo-50 border border-indigo-150 rounded-lg p-3">

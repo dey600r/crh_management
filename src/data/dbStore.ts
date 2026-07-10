@@ -51,28 +51,407 @@ export const INITIAL_CAREER_FAMILIES: CareerFamily[] = [
 ];
 
 export const INITIAL_CAREER_PATHS: CareerPath[] = [
-  { id: 'P_ARC', careerFamilyId: 'F_ARC', code: 'P_ARC', name: 'Software Architecture', description: 'Especialización en diseño de arquitecturas de software, patrones y cloud.' },
-  { id: 'P_SWE', careerFamilyId: 'F_SWE', code: 'P_SWE', name: 'Fullstack Software Development', description: 'Desarrollo extremo a extremo (Frontend, Backend, bases de datos).' },
-  { id: 'P_MGT', careerFamilyId: 'F_MGT', code: 'P_MGT', name: 'Technical Project Management', description: 'Liderazgo ágil, Scrum, coordinación de stakeholders.' },
-  { id: 'P_CON', careerFamilyId: 'F_CON', code: 'P_CON', name: 'Business & functional Analysis', description: 'Análisis de requisitos funcionales, alineación con negocio.' }
+  {
+    id: 'P_MGT',
+    careerFamilyId: 'F_MGT',
+    code: 'P_MGT',
+    name: 'Project Management',
+    description: 'Dirección integral de proyectos, programas, operaciones y preventas.',
+    finality: 'Dirección integral de proyectos, programas, operaciones y preventas. Equilibrio entre objetivos financieros, comerciales, humanos y productivos. Optimización continua del delivery y de la dinámica de equipo.',
+    toEvaluate: 'Delivery, rentabilidad, gestión de riesgos, liderazgo, satisfacción cliente.'
+  },
+  {
+    id: 'P_CON',
+    careerFamilyId: 'F_CON',
+    code: 'P_CON',
+    name: 'Business Analysis',
+    description: 'Transformar necesidades de negocio en soluciones funcionales.',
+    finality: 'Transformar necesidades de negocio en soluciones funcionales. Modelado de procesos, datos y experiencia de usuario. Facilitación de talleres y validaciones.',
+    toEvaluate: 'Análisis funcional, gestión requisitos, diseño, facilitación, comunicación.'
+  },
+  {
+    id: 'P_CON_PE',
+    careerFamilyId: 'F_CON',
+    code: 'P_CON_PE',
+    name: 'Product Expertise',
+    description: 'Implantación y parametrización de productos.',
+    finality: 'Implantación y parametrización de productos. Maximizar el valor funcional para el cliente. Formación y acompañamiento.',
+    toEvaluate: 'Expertise funcional, parametrización, adopción cliente, formación.'
+  },
+  {
+    id: 'P_CON_CA',
+    careerFamilyId: 'F_CON',
+    code: 'P_CON_CA',
+    name: 'Ciberanálisis',
+    description: 'Prevención, protección, detección y respuesta ante incidentes.',
+    finality: 'Prevención, protección, detección y respuesta. Gestión de riesgos y resiliencia. Gestión de crisis y cultura de ciberseguridad.',
+    toEvaluate: 'Gestión de riesgos, cumplimiento, protección, respuesta a incidentes.'
+  },
+  {
+    id: 'P_ARC',
+    careerFamilyId: 'F_ARC',
+    code: 'P_ARC',
+    name: 'Arquitectura',
+    description: 'Diseñar arquitecturas sostenibles y seguras.',
+    finality: 'Diseñar arquitecturas sostenibles y seguras. Garantizar viabilidad técnica y económica. Liderar decisiones tecnológicas.',
+    toEvaluate: 'Diseño, visión global, gobierno tecnológico, innovación.'
+  },
+  {
+    id: 'P_SWE',
+    careerFamilyId: 'F_SWE',
+    code: 'P_SWE',
+    name: 'Solution Building',
+    description: 'Construcción técnica de soluciones.',
+    finality: 'Construcción técnica de soluciones. Desarrollo, integración, industrialización y calidad.',
+    toEvaluate: 'Calidad de código, diseño técnico, automatización, productividad.'
+  },
+  {
+    id: 'P_SWE_TS',
+    careerFamilyId: 'F_SWE',
+    code: 'P_SWE_TS',
+    name: 'Testing',
+    description: 'Definir estrategia y política de pruebas.',
+    finality: 'Definir estrategia y política de pruebas. Garantizar calidad y cobertura.',
+    toEvaluate: 'Cobertura, automatización, defectos detectados, calidad.'
+  },
+  {
+    id: 'P_CON_PR',
+    careerFamilyId: 'F_CON',
+    code: 'P_CON_PR',
+    name: 'Producción',
+    description: 'Operación y optimización de infraestructuras y plataformas.',
+    finality: 'Operación y optimización de infraestructuras y plataformas. Garantizar disponibilidad y continuidad.',
+    toEvaluate: 'SLA, operación, monitorización, estabilidad.'
+  },
+  {
+    id: 'P_CON_SP',
+    careerFamilyId: 'F_CON',
+    code: 'P_CON_SP',
+    name: 'Soporte',
+    description: 'Garantizar soporte y calidad de servicio.',
+    finality: 'Garantizar soporte y calidad de servicio. Optimizar procesos y experiencia del usuario.',
+    toEvaluate: 'Incidencias, satisfacción cliente, tiempos de resolución.'
+  },
+  {
+    id: 'P_MGT_RD',
+    careerFamilyId: 'F_MGT',
+    code: 'P_MGT_RD',
+    name: 'I+D Project Management',
+    description: 'Gestión de proyectos de I+D.',
+    finality: 'Gestión de proyectos de I+D. Roadmap, industrialización y evolución de producto.',
+    toEvaluate: 'Cumplimiento roadmap, productividad, liderazgo técnico.'
+  },
+  {
+    id: 'P_MGT_PD',
+    careerFamilyId: 'F_MGT',
+    code: 'P_MGT_PD',
+    name: 'Product Management',
+    description: 'Gestión integral de oferta y producto.',
+    finality: 'Gestión integral de oferta y producto. Roadmap, rentabilidad y ciclo de vida.',
+    toEvaluate: 'Estrategia, negocio, rentabilidad, adopción.'
+  },
+  {
+    id: 'P_CON_MK',
+    careerFamilyId: 'F_CON',
+    code: 'P_CON_MK',
+    name: 'Marketing',
+    description: 'Impulsar crecimiento y posicionamiento.',
+    finality: 'Impulsar crecimiento y posicionamiento. Marketing de producto, demanda e inteligencia de mercado.',
+    toEvaluate: 'Generación demanda, posicionamiento, impacto comercial.'
+  }
 ];
 
 export const INITIAL_CAREER_LEVELS: CareerLevel[] = [
-  { id: 'L1', levelCode: 'T1', levelNumber: 1, name: 'Technician (Junior Dev)', experienceFrom: 0, experienceTo: 2 },
-  { id: 'L2', levelCode: 'E1', levelNumber: 2, name: 'Engineer (Mid Dev)', experienceFrom: 2, experienceTo: 4 },
-  { id: 'L3', levelCode: 'E2', levelNumber: 3, name: 'Senior Engineer', experienceFrom: 4, experienceTo: 7 },
-  { id: 'L4', levelCode: 'M1', levelNumber: 4, name: 'Manager / Lead Architect', experienceFrom: 7, experienceTo: 10 },
-  { id: 'L5', levelCode: 'M2', levelNumber: 5, name: 'Senior Manager', experienceFrom: 10, experienceTo: 15 },
-  { id: 'L6', levelCode: 'D1', levelNumber: 6, name: 'Director', experienceFrom: 15, experienceTo: 99 }
+  {
+    id: 'L1',
+    levelCode: "Nivel 1'",
+    levelNumber: 1,
+    name: "Technician (Nivel 1')",
+    experienceFrom: 0,
+    experienceTo: 2,
+    mission: 'Aprendizaje supervisado. Ejecución siguiendo procesos definidos.',
+    evaluationIndicators: 'Aprendizaje, Calidad básica, Trabajo en equipo, Autonomía inicial.'
+  },
+  {
+    id: 'L2',
+    levelCode: "Nivel 1",
+    levelNumber: 2,
+    name: "Engineer (Nivel 1)",
+    experienceFrom: 2,
+    experienceTo: 4,
+    mission: 'Ejecución autónoma inicial. Participación activa en proyectos.',
+    evaluationIndicators: 'Productividad, Calidad, Capacidad de entrega, Comunicación.'
+  },
+  {
+    id: 'L3',
+    levelCode: "Nivel 2",
+    levelNumber: 3,
+    name: "Senior Engineer (Nivel 2)",
+    experienceFrom: 4,
+    experienceTo: 7,
+    mission: 'Especialización y autonomía. Referente técnico o funcional.',
+    evaluationIndicators: 'Expertise, Resolución compleja, Mentoring, Valor añadido, Relación cliente.'
+  },
+  {
+    id: 'L4',
+    levelCode: "Nivel 3",
+    levelNumber: 4,
+    name: "Manager (Nivel 3)",
+    experienceFrom: 7,
+    experienceTo: 10,
+    mission: 'Responsabilidad de proyectos, operaciones o equipos. Desarrollo de personas.',
+    evaluationIndicators: 'Liderazgo, Gestión económica, Gestión riesgos, Satisfacción cliente, Desarrollo de colaboradores.'
+  },
+  {
+    id: 'L5',
+    levelCode: "Nivel 4",
+    levelNumber: 5,
+    name: "Senior Manager (Nivel 4)",
+    experienceFrom: 10,
+    experienceTo: 15,
+    mission: 'Dirección de actividades complejas multiárea. Desarrollo de negocio.',
+    evaluationIndicators: 'Estrategia, Gestión de cartera, Rentabilidad, Influencia, Desarrollo organizativo.'
+  },
+  {
+    id: 'L6',
+    levelCode: "Nivel 5",
+    levelNumber: 6,
+    name: "Director (Nivel 5)",
+    experienceFrom: 15,
+    experienceTo: 20,
+    mission: 'Dirección de proyectos, programas o áreas críticas. Liderazgo organizativo.',
+    evaluationIndicators: 'Crecimiento negocio, Transformación, Gestión financiera, Desarrollo talento, Relación cliente alto nivel.'
+  },
+  {
+    id: 'L7',
+    levelCode: "Nivel 6",
+    levelNumber: 7,
+    name: "Senior Director (Nivel 6)",
+    experienceFrom: 20,
+    experienceTo: 99,
+    mission: 'Dirección estratégica y representación corporativa corporativa.',
+    evaluationIndicators: 'Impacto estratégico, Desarrollo corporativo, Influencia de mercado, Gestión del capital humano.'
+  }
 ];
 
 export const INITIAL_COMPETENCIES: Competency[] = [
-  { id: 'CLIENT_ORIENTATION', code: 'CLIENT_ORIENTATION', name: 'Orientación al Cliente', type: 'Business', description: 'Capacidad para alinear el desarrollo con necesidades del cliente y aportar valor.' },
-  { id: 'INNOVATION', code: 'INNOVATION', name: 'Innovación Tecnológica', type: 'Technical', description: 'Adopción proactiva de nuevos stacks, optimización y creatividad técnica.' },
-  { id: 'HUMAN_RELATIONS', code: 'HUMAN_RELATIONS', name: 'Relaciones Humanas & Empatía', type: 'Behavioral', description: 'Comunicación fluida, asertividad, resolución de conflictos internos.' },
-  { id: 'TEAM_LEADERSHIP', code: 'TEAM_LEADERSHIP', name: 'Liderazgo & Mentoría', type: 'Leadership', description: 'Capacidad de guiar al equipo, delegar eficientemente y formar a juniors.' },
-  { id: 'ORGANIZATION_RESULTS', code: 'ORGANIZATION_RESULTS', name: 'Orientación a Resultados', type: 'Business', description: 'Foco en entregables de alta calidad, control de plazos y proactividad.' },
-  { id: 'PROFESSIONAL_OPENNESS', code: 'PROFESSIONAL_OPENNESS', name: 'Apertura Profesional', type: 'Behavioral', description: 'Autoaprendizaje continuo, generosidad para compartir conocimiento.' }
+  {
+    id: 'CLIENT_ORIENTATION',
+    code: 'CLIENT_ORIENTATION',
+    name: 'Orientación al Cliente',
+    type: 'Business',
+    description: 'Capacidad para desarrollar relaciones y servicios con el cliente, acompañándolo en su actividad y transformación.',
+    stages: {
+      A: [
+        'Establece relaciones con clientes internos y externos.',
+        'Recopila información necesaria para desempeñar su trabajo.',
+        'Representa a la empresa con profesionalidad.',
+        'Escucha y transmite necesidades detectadas.'
+      ],
+      B: [
+        'Mantiene relaciones de proximidad.',
+        'Comprende expectativas del cliente.',
+        'Integra dichas expectativas en sus decisiones.',
+        'Contribuye a la mejora continua del servicio.'
+      ],
+      C: [
+        'Garantiza que las necesidades reales y percibidas sean consideradas.',
+        'Genera valor añadido.',
+        'Anticipa necesidades.',
+        'Propone soluciones.',
+        'Promueve cultura de servicio.'
+      ],
+      D: [
+        'Negocia y presenta soluciones a alto nivel.',
+        'Influye en ecosistemas complejos.',
+        'Gestiona relaciones duraderas.'
+      ],
+      E: [
+        'Desarrolla visión estratégica con clientes.',
+        'Construye relaciones de confianza de largo plazo.',
+        'Representa al Grupo.'
+      ]
+    }
+  },
+  {
+    id: 'INNOVATION',
+    code: 'INNOVATION',
+    name: 'Búsqueda de Soluciones e Innovación',
+    type: 'Technical',
+    description: 'Capacidad para analizar situaciones y desarrollar soluciones adecuadas e innovadoras.',
+    stages: {
+      A: [
+        'Trabaja con rigor y método.',
+        'Aplica calidad.',
+        'Identifica carencias de información.',
+        'Busca soluciones.'
+      ],
+      B: [
+        'Integra nueva información.',
+        'Analiza desde distintas perspectivas.',
+        'Detecta oportunidades.',
+        'Capitaliza experiencias.'
+      ],
+      C: [
+        'Gestiona situaciones complejas.',
+        'Relaciona experiencias previas.',
+        'Aplica creatividad.',
+        'Desarrolla soluciones innovadoras.'
+      ],
+      D: [
+        'Evalúa problemas complejos con objetividad.',
+        'Analiza impacto de innovaciones.',
+        'Impulsa reutilización y capitalización.'
+      ],
+      E: [
+        'Diseña estrategias y organizaciones complejas.',
+        'Aprovecha tendencias y ecosistemas innovadores.',
+        'Genera nuevas ofertas y soluciones.'
+      ]
+    }
+  },
+  {
+    id: 'HUMAN_RELATIONS',
+    code: 'HUMAN_RELATIONS',
+    name: 'Sentido de las Relaciones Humanas',
+    type: 'Behavioral',
+    description: 'Capacidad para desarrollar relaciones y comunicarse eficazmente.',
+    stages: {
+      A: [
+        'Comunicación eficaz.',
+        'Escucha activa.',
+        'Relaciones con perfiles diversos.'
+      ],
+      B: [
+        'Comprende distintos puntos de vista.',
+        'Gestiona estrés.',
+        'Anticipa conflictos.'
+      ],
+      C: [
+        'Influye en otros.',
+        'Trabaja en entornos multiculturales.',
+        'Comprende motivaciones.'
+      ],
+      D: [
+        'Gestiona relaciones complejas.',
+        'Convence y moviliza.',
+        'Genera consensos.',
+        'Construye confianza.'
+      ],
+      E: [
+        'Desarrolla autonomía.',
+        'Facilita iniciativas.',
+        'Acompaña transformaciones.'
+      ]
+    }
+  },
+  {
+    id: 'ORGANIZATION_RESULTS',
+    code: 'ORGANIZATION_RESULTS',
+    name: 'Organización y Sentido del Resultado',
+    type: 'Business',
+    description: 'Capacidad para organizarse y alcanzar objetivos.',
+    stages: {
+      A: [
+        'Planifica tareas.',
+        'Gestiona prioridades.',
+        'Cumple plazos.',
+        'Finaliza actividades correctamente.'
+      ],
+      B: [
+        'Planifica acciones complejas.',
+        'Asigna recursos.',
+        'Prioriza correctamente.',
+        'Optimiza resultados.'
+      ],
+      C: [
+        'Coordina múltiples dependencias.',
+        'Toma decisiones oportunas.',
+        'Delega y supervisa.'
+      ],
+      D: [
+        'Anticipa riesgos.',
+        'Facilita autonomía.',
+        'Mantiene objetivos en entornos complejos.'
+      ],
+      E: [
+        'Asume arbitrajes complejos.',
+        'Gestiona incertidumbre.',
+        'Lidera transformaciones.'
+      ]
+    }
+  },
+  {
+    id: 'TEAM_LEADERSHIP',
+    code: 'TEAM_LEADERSHIP',
+    name: 'Dinámica de Equipo y Liderazgo',
+    type: 'Leadership',
+    description: 'Capacidad para colaborar, motivar y desarrollar personas.',
+    stages: {
+      A: [
+        'Coopera con el equipo.',
+        'Comparte conocimientos.',
+        'Entiende la cadena de valor.'
+      ],
+      B: [
+        'Contribuye activamente a la dinámica del equipo.',
+        'Integra diversidad.',
+        'Ayuda a nuevos compañeros.'
+      ],
+      C: [
+        'Motiva equipos.',
+        'Gestiona conflictos.',
+        'Da feedback constructivo.',
+        'Desarrolla competencias.',
+        'Impulsa iniciativas.'
+      ],
+      D: [
+        'Define dirección clara.',
+        'Desarrolla líderes.',
+        'Fomenta colaboración y confianza.',
+        'Optimiza transmisión de conocimiento.'
+      ],
+      E: [
+        'Comunica visión estratégica.',
+        'Moviliza grandes organizaciones.',
+        'Identifica y desarrolla futuros líderes.'
+      ]
+    }
+  },
+  {
+    id: 'PROFESSIONAL_OPENNESS',
+    code: 'PROFESSIONAL_OPENNESS',
+    name: 'Apertura Profesional',
+    type: 'Behavioral',
+    description: 'Capacidad para adaptarse, aprender y compartir conocimiento.',
+    stages: {
+      A: [
+        'Adapta comportamientos a contextos.',
+        'Integra cambios.',
+        'Actualiza conocimientos.'
+      ],
+      B: [
+        'Toma iniciativas.',
+        'Explora nuevos temas.',
+        'Desarrolla aprendizaje continuo.'
+      ],
+      C: [
+        'Explora nuevos contextos.',
+        'Desarrolla sinergias.',
+        'Comparte experiencias.'
+      ],
+      D: [
+        'Mantiene vigilancia tecnológica.',
+        'Desarrolla redes profesionales.',
+        'Capitaliza experiencias.'
+      ],
+      E: [
+        'Difunde innovación.',
+        'Contribuye a la notoriedad del Grupo.',
+        'Facilita transmisión global del conocimiento.'
+      ]
+    }
+  }
 ];
 
 export const INITIAL_TRAINING_CATALOG: TrainingCatalog[] = [
@@ -477,24 +856,24 @@ export class DatabaseStore {
       return;
     }
     try {
+      // Always update static reference specifications to match latest Guia de Carreras in DB
+      console.log('[Firestore] Synchronizing static career specs...');
+      for (const item of INITIAL_CAREER_PATHS) {
+        await setDoc(doc(db, 'careerPaths', item.id), item);
+      }
+      for (const item of INITIAL_CAREER_LEVELS) {
+        await setDoc(doc(db, 'careerLevels', item.id), item);
+      }
+      for (const item of INITIAL_COMPETENCIES) {
+        await setDoc(doc(db, 'competencies', item.id), item);
+      }
+      
       const snapshot = await getDocs(query(collection(db, 'employees'), limit(1)));
       if (snapshot.empty) {
         console.log('[Firestore] Seeding initial data...');
         // Seed career families
         for (const item of INITIAL_CAREER_FAMILIES) {
           await setDoc(doc(db, 'careerFamilies', item.id), item);
-        }
-        // Seed career paths
-        for (const item of INITIAL_CAREER_PATHS) {
-          await setDoc(doc(db, 'careerPaths', item.id), item);
-        }
-        // Seed career levels
-        for (const item of INITIAL_CAREER_LEVELS) {
-          await setDoc(doc(db, 'careerLevels', item.id), item);
-        }
-        // Seed competencies
-        for (const item of INITIAL_COMPETENCIES) {
-          await setDoc(doc(db, 'competencies', item.id), item);
         }
         // Seed trainings
         for (const item of INITIAL_TRAINING_CATALOG) {
