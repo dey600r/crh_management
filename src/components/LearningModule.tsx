@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  BookOpen, Target, Calendar, Award, Plus, Sparkles, CheckCircle, HelpCircle, ChevronRight, User, GraduationCap, ClipboardCheck
+  BookOpen, Target, Calendar, Award, Plus, Sparkles, CheckCircle, HelpCircle, ChevronLeft, ChevronRight, User, GraduationCap, ClipboardCheck
 } from 'lucide-react';
 import { Employee, TrainingCatalog, DevelopmentPlan, CheckpointReview, UserRole, CompetencyStage, getRequiredStage, scoreToStage, stageToScore } from '../types';
 import { MarkdownView } from './MarkdownView';
@@ -65,6 +65,7 @@ export default function LearningModule({
   // Editing checkpoint states
   const [editingCheckpointId, setEditingCheckpointId] = useState<string | null>(null);
   const [editingCheckpoint, setEditingCheckpoint] = useState<CheckpointReview | null>(null);
+  const [isCareerGuideExpanded, setIsCareerGuideExpanded] = useState(false);
 
   const handleSaveEditedCheckpoint = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -168,6 +169,119 @@ export default function LearningModule({
       default:
         return 'Etapa B';
     }
+  };
+
+  const renderCareerGuidePanel = (selectedEmpForCheckpoint: Employee | undefined) => {
+    const selectedPathForCheckpoint = selectedEmpForCheckpoint ? careerPaths.find(p => p.id === selectedEmpForCheckpoint.currentCareerPathId) : null;
+    const selectedLevelForCheckpoint = selectedEmpForCheckpoint ? careerLevels.find(l => l.id === selectedEmpForCheckpoint.currentLevelId) : null;
+
+    return (
+      <div className="bg-white border border-slate-200 rounded-xl p-3.5 space-y-3.5 overflow-y-auto max-h-[550px] shadow-sm animate-in fade-in slide-in-from-right-2 duration-300">
+        <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+          <div>
+            <span className="text-[9px] font-bold text-emerald-600 uppercase tracking-wide block">Información de Referencia de la BD</span>
+            <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1">
+              <GraduationCap className="h-3.5 w-3.5 text-emerald-600" />
+              Guía de Carreras Sopra Steria
+            </h4>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsCareerGuideExpanded(false)}
+            className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-600 transition flex items-center gap-1 text-[10px] font-semibold text-slate-500"
+            title="Ocultar Guía de Carreras"
+          >
+            <span>Ocultar</span>
+            <ChevronRight className="h-3.5 w-3.5" />
+          </button>
+        </div>
+
+        {!selectedEmpForCheckpoint ? (
+          <div className="text-center p-6 text-slate-400 space-y-2 h-full flex flex-col items-center justify-center">
+            <HelpCircle className="h-8 w-8 text-slate-300 animate-pulse" />
+            <p className="text-xs font-semibold">Seleccione un Colaborador</p>
+            <p className="text-[10px] leading-relaxed">
+              Cargará automáticamente la finalidad, criterios de evaluación, misión e indicadores de posición oficiales para guiar de forma objetiva la valoración.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-3.5 animate-in fade-in duration-200">
+            {/* Carrera */}
+            <div className="bg-emerald-50/30 border border-emerald-100/55 rounded-lg p-3 space-y-1.5">
+              <div className="flex justify-between items-center">
+                <span className="text-[9px] font-bold text-emerald-700 uppercase bg-emerald-50 px-1.5 py-0.2 rounded">Carrera</span>
+                <span className="text-[10px] font-semibold text-slate-900">{selectedPathForCheckpoint?.name}</span>
+              </div>
+              {selectedPathForCheckpoint?.finality && (
+                <div>
+                  <strong className="text-[9.5px] text-slate-700 block">Finalidad del Rol:</strong>
+                  <p className="text-[10px] text-slate-600 leading-relaxed">{selectedPathForCheckpoint.finality}</p>
+                </div>
+              )}
+              {selectedPathForCheckpoint?.toEvaluate && (
+                <div>
+                  <strong className="text-[9.5px] text-slate-700 block">¿Qué evaluar en esta carrera?:</strong>
+                  <p className="text-[10px] text-slate-600 font-medium">{selectedPathForCheckpoint.toEvaluate}</p>
+                </div>
+              )}
+            </div>
+
+            {/* Posición */}
+            <div className="bg-blue-50/30 border border-blue-100/55 rounded-lg p-3 space-y-1.5">
+              <div className="flex justify-between items-center">
+                <span className="text-[9px] font-bold text-blue-700 uppercase bg-blue-50 px-1.5 py-0.2 rounded">Nivel / Posición</span>
+                <span className="text-[10px] font-semibold text-slate-900 font-mono bg-white px-1 border rounded">{selectedLevelForCheckpoint?.levelCode} • {selectedLevelForCheckpoint?.name}</span>
+              </div>
+              {selectedLevelForCheckpoint?.mission && (
+                <div>
+                  <strong className="text-[9.5px] text-slate-700 block">Misión de la Posición:</strong>
+                  <p className="text-[10px] text-slate-600 leading-relaxed">{selectedLevelForCheckpoint.mission}</p>
+                </div>
+              )}
+              {selectedLevelForCheckpoint?.evaluationIndicators && (
+                <div>
+                  <strong className="text-[9.5px] text-slate-700 block">Indicadores Clave de Evaluación:</strong>
+                  <p className="text-[10px] text-slate-600 font-medium">{selectedLevelForCheckpoint.evaluationIndicators}</p>
+                </div>
+              )}
+            </div>
+
+            {/* Competencias Clave y Niveles de Etapa */}
+            <div className="space-y-2">
+              <strong className="text-[10px] font-bold text-slate-700 uppercase block border-b pb-1">Comportamientos Esperados por Competencia</strong>
+              <div className="space-y-2 max-h-[250px] overflow-y-auto pr-1">
+                {competencies.map(comp => {
+                  const targetStage = (selectedPathForCheckpoint && selectedLevelForCheckpoint)
+                    ? getRequiredStage(selectedPathForCheckpoint.id, selectedLevelForCheckpoint.id, comp.id)
+                    : 'B';
+                  const indicators = comp.stages?.[targetStage] || [];
+                  const targetScore = selectedLevelForCheckpoint ? getTargetScoreForLevelAndCompetency(selectedLevelForCheckpoint.id, comp.id) : 3;
+
+                  return (
+                    <div key={comp.id} className="border border-slate-100 rounded p-2 bg-slate-50 space-y-1">
+                      <div className="flex justify-between items-center text-[10px] font-semibold border-b border-dashed pb-1">
+                        <span className="text-slate-800">{comp.name}</span>
+                        <span className="text-indigo-600 font-bold bg-white px-1.5 rounded border">
+                          Etapa {targetStage.toLowerCase()} (Meta: {targetScore})
+                        </span>
+                      </div>
+                      <ul className="list-disc pl-3.5 space-y-0.5 text-[9.5px] text-slate-500 leading-relaxed">
+                        {indicators.map((ind: string, i: number) => (
+                          <li key={i}>{ind}</li>
+                        ))}
+                        {indicators.length === 0 && (
+                          <li className="list-none text-slate-400 italic">No hay comportamientos registrados en esta etapa de la base de datos.</li>
+                        )}
+                      </ul>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
   };
 
   // Initializing scores form for checkpoint and auto-calculating targets based on Employee's Level
@@ -580,11 +694,23 @@ export default function LearningModule({
               const targetStageName = selectedLevelForCheckpoint ? getTargetStageNameForLevel(selectedLevelForCheckpoint.id) : '';
 
               return (
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 bg-slate-50 border border-slate-200 rounded-xl p-4 mb-6">
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 bg-slate-50 border border-slate-200 rounded-xl p-4 mb-6 transition-all duration-300">
                   {/* Form Column */}
-                  <form onSubmit={handleCreateCheckpoint} className="lg:col-span-7 space-y-4">
+                  <form onSubmit={handleCreateCheckpoint} className={`${isCareerGuideExpanded ? 'lg:col-span-7' : 'lg:col-span-12'} space-y-4 transition-all duration-300`}>
                     <div className="flex justify-between items-center border-b pb-2">
-                      <h4 className="text-xs font-bold text-slate-900">Registrar Evaluación Continua</h4>
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-xs font-bold text-slate-900">Registrar Evaluación Continua</h4>
+                        <button
+                          type="button"
+                          onClick={() => setIsCareerGuideExpanded(!isCareerGuideExpanded)}
+                          className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 transition"
+                          title={isCareerGuideExpanded ? "Ocultar Guía de Carreras" : "Mostrar Guía de Carreras"}
+                        >
+                          <HelpCircle className="h-3.5 w-3.5" />
+                          <span>Guía de Carreras</span>
+                          {isCareerGuideExpanded ? <ChevronRight className="h-3 w-3" /> : <ChevronLeft className="h-3 w-3" />}
+                        </button>
+                      </div>
                       <button
                         type="button"
                         onClick={() => setShowAddCheckpoint(false)}
@@ -748,100 +874,11 @@ export default function LearningModule({
                   </form>
 
                   {/* Career Guide specs assistance panel */}
-                  <div className="lg:col-span-5 bg-white border border-slate-200 rounded-xl p-3.5 space-y-3.5 overflow-y-auto max-h-[500px] shadow-sm">
-                    <div className="border-b border-slate-100 pb-2">
-                      <span className="text-[9px] font-bold text-emerald-600 uppercase tracking-wide block">Información de Referencia de la BD</span>
-                      <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1">
-                        <GraduationCap className="h-3.5 w-3.5 text-emerald-600" />
-                        Guía de Carreras Sopra Steria
-                      </h4>
+                  {isCareerGuideExpanded && (
+                    <div className="lg:col-span-5">
+                      {renderCareerGuidePanel(selectedEmpForCheckpoint)}
                     </div>
-
-                    {!selectedEmpForCheckpoint ? (
-                      <div className="text-center p-6 text-slate-400 space-y-2 h-full flex flex-col items-center justify-center">
-                        <HelpCircle className="h-8 w-8 text-slate-300 animate-pulse" />
-                        <p className="text-xs font-semibold">Seleccione un Colaborador</p>
-                        <p className="text-[10px] leading-relaxed">
-                          Cargará automáticamente la finalidad, criterios de evaluación, misión e indicadores de posición oficiales para guiar de forma objetiva la valoración.
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="space-y-3.5">
-                        {/* Carrera */}
-                        <div className="bg-emerald-50/30 border border-emerald-100/55 rounded-lg p-3 space-y-1.5">
-                          <div className="flex justify-between items-center">
-                            <span className="text-[9px] font-bold text-emerald-700 uppercase bg-emerald-50 px-1.5 py-0.2 rounded">Carrera</span>
-                            <span className="text-[10px] font-semibold text-slate-900">{selectedPathForCheckpoint?.name}</span>
-                          </div>
-                          {selectedPathForCheckpoint?.finality && (
-                            <div>
-                              <strong className="text-[9.5px] text-slate-700 block">Finalidad del Rol:</strong>
-                              <p className="text-[10px] text-slate-600 leading-relaxed">{selectedPathForCheckpoint.finality}</p>
-                            </div>
-                          )}
-                          {selectedPathForCheckpoint?.toEvaluate && (
-                            <div>
-                              <strong className="text-[9.5px] text-slate-700 block">¿Qué evaluar en esta carrera?:</strong>
-                              <p className="text-[10px] text-slate-600 font-medium">{selectedPathForCheckpoint.toEvaluate}</p>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Posición */}
-                        <div className="bg-blue-50/30 border border-blue-100/55 rounded-lg p-3 space-y-1.5">
-                          <div className="flex justify-between items-center">
-                            <span className="text-[9px] font-bold text-blue-700 uppercase bg-blue-50 px-1.5 py-0.2 rounded">Nivel / Posición</span>
-                            <span className="text-[10px] font-semibold text-slate-900 font-mono bg-white px-1 border rounded">{selectedLevelForCheckpoint?.levelCode} • {selectedLevelForCheckpoint?.name}</span>
-                          </div>
-                          {selectedLevelForCheckpoint?.mission && (
-                            <div>
-                              <strong className="text-[9.5px] text-slate-700 block">Misión de la Posición:</strong>
-                              <p className="text-[10px] text-slate-600 leading-relaxed">{selectedLevelForCheckpoint.mission}</p>
-                            </div>
-                          )}
-                          {selectedLevelForCheckpoint?.evaluationIndicators && (
-                            <div>
-                              <strong className="text-[9.5px] text-slate-700 block">Indicadores Clave de Evaluación:</strong>
-                              <p className="text-[10px] text-slate-600 font-medium">{selectedLevelForCheckpoint.evaluationIndicators}</p>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Competencias Clave y Niveles de Etapa */}
-                        <div className="space-y-2">
-                          <strong className="text-[10px] font-bold text-slate-700 uppercase block border-b pb-1">Comportamientos Esperados por Competencia</strong>
-                          <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
-                            {competencies.map(comp => {
-                              const targetStage = (selectedPathForCheckpoint && selectedLevelForCheckpoint)
-                                ? getRequiredStage(selectedPathForCheckpoint.id, selectedLevelForCheckpoint.id, comp.id)
-                                : 'B';
-                              const indicators = comp.stages?.[targetStage] || [];
-                              const targetScore = selectedLevelForCheckpoint ? getTargetScoreForLevelAndCompetency(selectedLevelForCheckpoint.id, comp.id) : 3;
-
-                              return (
-                                <div key={comp.id} className="border border-slate-100 rounded p-2 bg-slate-50 space-y-1">
-                                  <div className="flex justify-between items-center text-[10px] font-semibold border-b border-dashed pb-1">
-                                    <span className="text-slate-800">{comp.name}</span>
-                                    <span className="text-indigo-600 font-bold bg-white px-1.5 rounded border">
-                                      Etapa {targetStage.toLowerCase()} (Meta: {targetScore})
-                                    </span>
-                                  </div>
-                                  <ul className="list-disc pl-3.5 space-y-0.5 text-[9.5px] text-slate-500 leading-relaxed">
-                                    {indicators.map((ind: string, i: number) => (
-                                      <li key={i}>{ind}</li>
-                                    ))}
-                                    {indicators.length === 0 && (
-                                      <li className="list-none text-slate-400 italic">No hay comportamientos registrados en esta etapa de la base de datos.</li>
-                                    )}
-                                  </ul>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                  )}
                 </div>
               );
             })()}
@@ -864,181 +901,222 @@ export default function LearningModule({
                   
                   if (isEditing) {
                     return (
-                      <div key={cp.id} className="border-2 border-indigo-500 rounded-xl p-4 bg-slate-50 space-y-4 shadow-md transition-all">
-                        <div className="flex justify-between items-center border-b pb-2">
-                          <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider bg-indigo-50 px-2 py-0.5 rounded">
-                            Modo Edición • {cp.id}
-                          </span>
-                          <h4 className="text-xs font-bold text-slate-900">
-                            {emp ? `${emp.name} ${emp.surname}` : 'Colaborador'}
-                          </h4>
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                          <div>
-                            <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Proyecto</label>
-                            <select
-                              value={editingCheckpoint.projectId}
-                              onChange={e => setEditingCheckpoint({...editingCheckpoint, projectId: e.target.value})}
-                              className="w-full text-xs border border-slate-300 rounded p-1 bg-white font-medium"
+                      <div key={cp.id} className="grid grid-cols-1 lg:grid-cols-12 gap-6 border-2 border-indigo-500 rounded-xl p-4 bg-slate-50 shadow-md transition-all duration-300">
+                        <form 
+                          onSubmit={handleSaveEditedCheckpoint}
+                          className={`${isCareerGuideExpanded ? 'lg:col-span-7' : 'lg:col-span-12'} space-y-4 transition-all duration-300`}
+                        >
+                          <div className="flex justify-between items-center border-b pb-2">
+                            <div className="flex items-center gap-2">
+                              <h4 className="text-xs font-bold text-slate-900">
+                                Editar Evaluación Continua {emp ? `(${emp.name} ${emp.surname})` : ''}
+                              </h4>
+                              <button
+                                type="button"
+                                onClick={() => setIsCareerGuideExpanded(!isCareerGuideExpanded)}
+                                className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 transition"
+                                title={isCareerGuideExpanded ? "Ocultar Guía de Carreras" : "Mostrar Guía de Carreras"}
+                              >
+                                <HelpCircle className="h-3.5 w-3.5" />
+                                <span>Guía de Carreras</span>
+                                {isCareerGuideExpanded ? <ChevronRight className="h-3 w-3" /> : <ChevronLeft className="h-3 w-3" />}
+                              </button>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingCheckpointId(null);
+                                setEditingCheckpoint(null);
+                              }}
+                              className="text-[10px] text-slate-500 hover:text-slate-700 font-semibold uppercase"
                             >
-                              <option value="PRJ001">Banco Santander Cloud</option>
-                              <option value="PRJ002">Mercadona E-Commerce</option>
-                              <option value="PRJ003">Telefónica IoT Analytics</option>
-                            </select>
+                              Cancelar
+                            </button>
                           </div>
-                          <div>
-                            <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Frecuencia</label>
-                            <select
-                              value={editingCheckpoint.reviewType}
-                              onChange={e => setEditingCheckpoint({...editingCheckpoint, reviewType: e.target.value as any})}
-                              className="w-full text-xs border border-slate-300 rounded p-1 bg-white font-medium"
-                            >
-                              <option value="Monthly">Mensual</option>
-                              <option value="Quarterly">Trimestral</option>
-                              <option value="MidProject">Mitad de Proyecto</option>
-                              <option value="EndProject">Cierre de Proyecto</option>
-                            </select>
+
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                            <div>
+                              <label className="text-[10px] font-bold text-slate-500 uppercase">Colaborador</label>
+                              <input
+                                type="text"
+                                value={emp ? `${emp.name} ${emp.surname}` : ''}
+                                disabled
+                                className="w-full text-xs border border-slate-200 rounded p-1 bg-slate-100 text-slate-500 font-semibold"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-bold text-slate-500 uppercase">Proyecto</label>
+                              <select
+                                value={editingCheckpoint.projectId}
+                                onChange={e => setEditingCheckpoint({...editingCheckpoint, projectId: e.target.value})}
+                                className="w-full text-xs border border-slate-300 rounded p-1 bg-white font-medium"
+                              >
+                                <option value="PRJ001">Banco Santander Cloud</option>
+                                <option value="PRJ002">Mercadona E-Commerce</option>
+                                <option value="PRJ003">Telefónica IoT Analytics</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-bold text-slate-500 uppercase">Frecuencia</label>
+                              <select
+                                value={editingCheckpoint.reviewType}
+                                onChange={e => setEditingCheckpoint({...editingCheckpoint, reviewType: e.target.value as any})}
+                                className="w-full text-xs border border-slate-300 rounded p-1 bg-white font-medium"
+                              >
+                                <option value="Monthly">Mensual</option>
+                                <option value="Quarterly">Trimestral</option>
+                                <option value="MidProject">Mitad de Proyecto</option>
+                                <option value="EndProject">Cierre de Proyecto</option>
+                              </select>
+                            </div>
                           </div>
-                        </div>
 
-                        {/* Scores */}
-                        <div className="space-y-2">
-                          <span className="text-[10px] font-bold text-slate-500 uppercase block">Competencias (Escala 1 a 5)</span>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                            {competencies.map((comp) => {
-                              const scoreObj = editingCheckpoint.scores.find(s => s.competencyId === comp.id);
-                              const scoreVal = scoreObj ? scoreObj.score : 3;
-                              const stageVal = scoreObj?.stage || 'B';
-                              const editingEmp = employees.find(e => e.employeeId === editingCheckpoint.employeeId);
-                              const reqStage = editingEmp ? getRequiredStage(editingEmp.currentCareerPathId, editingEmp.currentLevelId, comp.id) : 'B';
+                          {/* Scores */}
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-bold text-slate-500 uppercase block">Competencias del Nivel (Escala 1 a 5)</span>
+                              {emp && (
+                                <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">
+                                  Meta Requerida: {getTargetStageNameForLevel(emp.currentLevelId)}
+                                </span>
+                              )}
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              {competencies.map((comp) => {
+                                const scoreObj = editingCheckpoint.scores.find(s => s.competencyId === comp.id);
+                                const scoreVal = scoreObj ? scoreObj.score : 3;
+                                const stageVal = scoreObj?.stage || 'B';
+                                const editingEmp = employees.find(e => e.employeeId === editingCheckpoint.employeeId);
+                                const reqStage = editingEmp ? getRequiredStage(editingEmp.currentCareerPathId, editingEmp.currentLevelId, comp.id) : 'B';
+                                const targetLevelForEditing = editingEmp ? careerLevels.find(l => l.id === editingEmp.currentLevelId) : null;
+                                const targetScore = targetLevelForEditing ? getTargetScoreForLevelAndCompetency(targetLevelForEditing.id, comp.id) : 3;
+                                const isMeeting = scoreVal >= targetScore;
 
-                              return (
-                                <div key={comp.id} className="bg-white border p-1.5 rounded text-xs shadow-xs space-y-1.5">
-                                  <div className="flex items-center justify-between">
-                                    <span className="truncate max-w-[150px] font-semibold text-slate-700">{comp.name}</span>
-                                    <span className="text-[9px] bg-slate-100 text-slate-500 font-bold px-1 py-0.2 rounded">
-                                      Meta: {reqStage.toLowerCase()}
-                                    </span>
+                                return (
+                                  <div key={comp.id} className="bg-white border p-2 rounded text-xs space-y-1 shadow-xs">
+                                    <div className="flex items-center justify-between">
+                                      <span className="font-semibold text-slate-800 truncate max-w-[150px]">{comp.name}</span>
+                                      <span className={`text-[9px] px-1.5 py-0.2 rounded font-bold ${
+                                        isMeeting ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'
+                                      }`}>
+                                        Meta: {targetScore} (etapa {reqStage.toLowerCase()})
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-[10px] text-slate-400">Nota evaluada:</span>
+                                      <input
+                                        type="number"
+                                        min="1"
+                                        max="5"
+                                        value={scoreVal}
+                                        onChange={e => {
+                                          const val = Math.max(1, Math.min(5, Number(e.target.value)));
+                                          const updatedScores = editingCheckpoint.scores.map(s => 
+                                            s.competencyId === comp.id ? { ...s, score: val } : s
+                                          );
+                                          if (!editingCheckpoint.scores.some(s => s.competencyId === comp.id)) {
+                                            updatedScores.push({ competencyId: comp.id, score: val, stage: 'B', comments: 'Actualizado.' });
+                                          }
+                                          setEditingCheckpoint({ ...editingCheckpoint, scores: updatedScores });
+                                        }}
+                                        className="w-12 text-center border rounded font-bold text-slate-900 p-0.5"
+                                      />
+                                    </div>
+                                    <div className="flex items-center justify-between pt-1 border-t border-slate-100 mt-1">
+                                      <span className="text-[10px] text-slate-400">Etapa evaluada:</span>
+                                      <select
+                                        value={stageVal}
+                                        onChange={e => {
+                                          const stg = e.target.value as 'A' | 'B' | 'C' | 'D' | 'E';
+                                          const updatedScores = editingCheckpoint.scores.map(s => 
+                                            s.competencyId === comp.id ? { ...s, stage: stg } : s
+                                          );
+                                          if (!editingCheckpoint.scores.some(s => s.competencyId === comp.id)) {
+                                            updatedScores.push({ competencyId: comp.id, score: 3, stage: stg, comments: 'Actualizado.' });
+                                          }
+                                          setEditingCheckpoint({ ...editingCheckpoint, scores: updatedScores });
+                                        }}
+                                        className="border rounded text-[11px] p-0.5 font-bold text-indigo-700 bg-white"
+                                      >
+                                        <option value="A">Etapa a</option>
+                                        <option value="B">Etapa b</option>
+                                        <option value="C">Etapa c</option>
+                                        <option value="D">Etapa d</option>
+                                        <option value="E">Etapa e</option>
+                                      </select>
+                                    </div>
                                   </div>
-                                  <div className="flex items-center justify-between gap-1">
-                                    <span className="text-[10px] text-slate-400">Nota:</span>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {/* KPIs */}
+                          <div className="space-y-2">
+                            <span className="text-[10px] font-bold text-slate-500 uppercase block">KPIs Objetivos del Proyecto (Escala 1 a 5)</span>
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                              {editingCheckpoint.kpis.map((k, idx) => (
+                                <div key={k.kpi} className="bg-white border p-2 rounded text-xs space-y-1 shadow-xs">
+                                  <span className="font-semibold text-slate-800 block text-center truncate">{k.kpi}</span>
+                                  <div className="flex items-center justify-between text-[10px]">
+                                    <span className="text-slate-500 font-medium">Meta (Calculada):</span>
                                     <input
                                       type="number"
-                                      min="1"
-                                      max="5"
-                                      value={scoreVal}
+                                      step="0.1"
+                                      value={k.targetValue}
                                       onChange={e => {
-                                        const val = Math.max(1, Math.min(5, Number(e.target.value)));
-                                        const updatedScores = editingCheckpoint.scores.map(s => 
-                                          s.competencyId === comp.id ? { ...s, score: val } : s
-                                        );
-                                        if (!editingCheckpoint.scores.some(s => s.competencyId === comp.id)) {
-                                          updatedScores.push({ competencyId: comp.id, score: val, stage: 'B', comments: 'Actualizado.' });
-                                        }
-                                        setEditingCheckpoint({ ...editingCheckpoint, scores: updatedScores });
+                                        const updatedKPIs = [...editingCheckpoint.kpis];
+                                        updatedKPIs[idx] = { ...updatedKPIs[idx], targetValue: Number(e.target.value) };
+                                        setEditingCheckpoint({ ...editingCheckpoint, kpis: updatedKPIs });
                                       }}
-                                      className="w-11 text-center border rounded font-semibold text-slate-900 p-0.5"
+                                      className="w-10 text-center border rounded font-bold text-slate-700 bg-slate-50"
                                     />
-                                    <span className="text-[10px] text-slate-400">Etapa:</span>
-                                    <select
-                                      value={stageVal}
+                                  </div>
+                                  <div className="flex items-center justify-between text-[10px]">
+                                    <span className="text-indigo-600 font-semibold">Real:</span>
+                                    <input
+                                      type="number"
+                                      step="0.1"
+                                      value={k.currentValue}
                                       onChange={e => {
-                                        const stg = e.target.value as 'A' | 'B' | 'C' | 'D' | 'E';
-                                        const updatedScores = editingCheckpoint.scores.map(s => 
-                                          s.competencyId === comp.id ? { ...s, stage: stg } : s
-                                        );
-                                        if (!editingCheckpoint.scores.some(s => s.competencyId === comp.id)) {
-                                          updatedScores.push({ competencyId: comp.id, score: 3, stage: stg, comments: 'Actualizado.' });
-                                        }
-                                        setEditingCheckpoint({ ...editingCheckpoint, scores: updatedScores });
+                                        const updatedKPIs = [...editingCheckpoint.kpis];
+                                        updatedKPIs[idx] = { ...updatedKPIs[idx], currentValue: Number(e.target.value) };
+                                        setEditingCheckpoint({ ...editingCheckpoint, kpis: updatedKPIs });
                                       }}
-                                      className="border rounded text-[10px] p-0.5 font-bold text-indigo-700 bg-white"
-                                    >
-                                      <option value="A">Etapa a</option>
-                                      <option value="B">Etapa b</option>
-                                      <option value="C">Etapa c</option>
-                                      <option value="D">Etapa d</option>
-                                      <option value="E">Etapa e</option>
-                                    </select>
+                                      className="w-11 text-center border rounded font-bold text-indigo-600"
+                                    />
                                   </div>
                                 </div>
-                              );
-                            })}
+                              ))}
+                            </div>
                           </div>
-                        </div>
 
-                        {/* KPIs */}
-                        <div className="space-y-2">
-                          <span className="text-[10px] font-bold text-slate-500 uppercase block">KPIs del Proyecto (Escala 1 a 5)</span>
-                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                            {editingCheckpoint.kpis.map((k, idx) => (
-                              <div key={k.kpi} className="bg-white border p-2 rounded text-xs space-y-1.5 shadow-xs">
-                                <span className="font-semibold text-slate-800 block text-center truncate">{k.kpi}</span>
-                                <div className="flex items-center justify-between text-[10px]">
-                                  <span>Meta:</span>
-                                  <input
-                                    type="number"
-                                    step="0.1"
-                                    value={k.targetValue}
-                                    onChange={e => {
-                                      const updatedKPIs = [...editingCheckpoint.kpis];
-                                      updatedKPIs[idx] = { ...updatedKPIs[idx], targetValue: Number(e.target.value) };
-                                      setEditingCheckpoint({ ...editingCheckpoint, kpis: updatedKPIs });
-                                    }}
-                                    className="w-11 text-center border rounded"
-                                  />
-                                </div>
-                                <div className="flex items-center justify-between text-[10px]">
-                                  <span>Real:</span>
-                                  <input
-                                    type="number"
-                                    step="0.1"
-                                    value={k.currentValue}
-                                    onChange={e => {
-                                      const updatedKPIs = [...editingCheckpoint.kpis];
-                                      updatedKPIs[idx] = { ...updatedKPIs[idx], currentValue: Number(e.target.value) };
-                                      setEditingCheckpoint({ ...editingCheckpoint, kpis: updatedKPIs });
-                                    }}
-                                    className="w-11 text-center border rounded font-bold text-indigo-600"
-                                  />
-                                </div>
-                              </div>
-                            ))}
+                          {/* Comments */}
+                          <div>
+                            <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Comentarios Generales del Desempeño</label>
+                            <textarea
+                              placeholder="Escribe comentarios objetivos, evidencias técnicas y feedback de entrega..."
+                              value={editingCheckpoint.comments}
+                              onChange={e => setEditingCheckpoint({...editingCheckpoint, comments: e.target.value})}
+                              className="w-full text-xs border border-slate-300 rounded p-1.5 bg-white h-16"
+                              required
+                            />
                           </div>
-                        </div>
 
-                        {/* Comments */}
-                        <div>
-                          <label className="text-[10px] font-bold text-slate-500 uppercase">Comentarios Generales del Desempeño</label>
-                          <textarea
-                            placeholder="Escribe comentarios de desempeño..."
-                            value={editingCheckpoint.comments}
-                            onChange={e => setEditingCheckpoint({...editingCheckpoint, comments: e.target.value})}
-                            className="w-full text-xs border border-slate-300 rounded p-1.5 bg-white h-16 focus:outline-none focus:border-indigo-500"
-                            required
-                          />
-                        </div>
+                          <button
+                            type="submit"
+                            className="w-full bg-indigo-600 text-white font-bold rounded text-xs py-2 hover:bg-indigo-700 transition shadow-sm"
+                          >
+                            Guardar Checkpoint Actualizado
+                          </button>
+                        </form>
 
-                        <div className="flex justify-end gap-2 pt-1">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditingCheckpointId(null);
-                              setEditingCheckpoint(null);
-                            }}
-                            className="text-xs text-slate-600 bg-white border border-slate-200 hover:bg-slate-100 font-semibold px-3 py-1.5 rounded transition"
-                          >
-                            Cancelar
-                          </button>
-                          <button
-                            type="button"
-                            onClick={handleSaveEditedCheckpoint}
-                            className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-4 py-1.5 rounded transition shadow-xs"
-                          >
-                            Guardar Checkpoint
-                          </button>
-                        </div>
+                        {/* Career Guide specs assistance panel (Collapsible) */}
+                        {isCareerGuideExpanded && (
+                          <div className="lg:col-span-5">
+                            {renderCareerGuidePanel(emp)}
+                          </div>
+                        )}
                       </div>
                     );
                   }
