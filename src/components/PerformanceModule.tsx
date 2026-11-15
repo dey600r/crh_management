@@ -1,0 +1,1020 @@
+import { useState, useEffect } from 'react';
+import { 
+  Award, ShieldCheck, FileText, CheckCircle, HelpCircle, ArrowRight, Sparkles, Send, AlertTriangle, Scale, Lock, Plus, Users, ChevronDown, ChevronUp 
+} from 'lucide-react';
+import { AnnualEvaluation, Employee, CheckpointReview, UserRole, CompetencyStage, getRequiredStage, scoreToStage, stageToScore, getLevelTargetScore } from '../types';
+import { MarkdownView } from './MarkdownView';
+import CheckpointProgressChart from './CheckpointProgressChart';
+import TruncatedTooltip from './TruncatedTooltip';
+
+interface PerformanceModuleProps {
+  userRole: UserRole;
+  employees: Employee[];
+  evaluations: AnnualEvaluation[];
+  checkpoints: CheckpointReview[];
+  careerLevels: any[];
+  careerPaths: any[];
+  competencies: any[];
+  onDataRefresh: () => void;
+}
+
+export default function PerformanceModule({
+  userRole,
+  employees,
+  evaluations,
+  checkpoints,
+  careerLevels,
+  careerPaths,
+  competencies,
+  onDataRefresh
+}: PerformanceModuleProps) {
+  const [selectedEval, setSelectedEval] = useState<AnnualEvaluation | null>(null);
+
+  // IA draft states
+  const [isDraftingLoading, setIsDraftingLoading] = useState(false);
+  const [aiDraftMarkdown, setAiDraftMarkdown] = useState<string | null>(null);
+  const [draftError, setDraftError] = useState<string | null>(null);
+
+  // Edit states
+  const [managerComment, setManagerComment] = useState('');
+  const [hrComment, setHrComment] = useState('');
+  const [expandedCheckpoints, setExpandedCheckpoints] = useState<Record<string, boolean>>({});
+  const [isFormulaExpanded, setIsFormulaExpanded] = useState(false);
+
+  // Reset collapsible checkpoint state whenever selected evaluation or checkpoints change:
+  // Collapsed by default if > 1 checkpoint; expanded if exactly 1 checkpoint.
+  useEffect(() => {
+    if (!selectedEval) {
+      setExpandedCheckpoints({});
+      return;
+    }
+    const empCps = checkpoints.filter(chk => chk.employeeId === selectedEval.employeeId);
+    if (empCps.length === 1) {
+      setExpandedCheckpoints({ [empCps[0].id]: true });
+    } else {
+      setExpandedCheckpoints({});
+    }
+  }, [selectedEval?.evaluationId, checkpoints]);
+
+  // Handle Dimension Score Updates
+  const handleUpdateDimensionScore = async (dimId: string, newScore: number) => {
+    if (!selectedEval) return;
+    
+    // Clamp score to 1-5
+    const clampedScore = Math.max(1, Math.min(5, Number(newScore)));
+    
+    const updatedDimensions = selectedEval.dimensions.map(d => {
+      if (d.id === dimId) {
+        return { ...d, score: clampedScore };
+      }
+      return d;
+    });
+
+    // Recalculate final score using weights
+    let weightedSum = 0;
+    updatedDimensions.forEach(d => {
+      weightedSum += d.score * (d.weight / 100);
+    });
+    const newFinalScore = Number(weightedSum.toFixed(2));
+
+    // Determine result based on finalScore
+    let result: 'Unsatisfactory' | 'MeetsExpectations' | 'ExceedsExpectations' | 'Outstanding' | 'Promoted' = 'MeetsExpectations';
+    if (newFinalScore >= 4.5) {
+      result = 'Outstanding';
+    } else if (newFinalScore >= 4.0) {
+      result = 'ExceedsExpectations';
+    } else if (newFinalScore >= 3.0) {
+      result = 'MeetsExpectations';
+    } else {
+      result = 'Unsatisfactory';
+    }
+
+    try {
+      const res = await fetch(`/api/annual-evaluations/${selectedEval.evaluationId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          dimensions: updatedDimensions,
+          finalScore: newFinalScore,
+          evaluationResult: result
+        })
+      });
+      if (res.ok) {
+        onDataRefresh();
+        const updated = await res.json();
+        setSelectedEval(updated);
+      }
+    } catch (err) {
+      console.error('Error updating dimension score:', err);
+    }
+  };
+
+  // Handle Starting a new Annual Evaluation
+  const handleCreateEvaluation = async (empId: string) => {
+    const emp = employees.find(e => e.employeeId === empId);
+    if (!emp) return;
+
+    const newLvlNum = parseInt(emp.currentLevelId.replace('L', '')) || 1;
+    const nextLvlNum = Math.min(6, newLvlNum + 1);
+    const targetLevelId = `L${nextLvlNum}`;
+
+    const newEvalPayload = {
+      employeeId: empId,
+      year: 2025,
+      currentLevelId: emp.currentLevelId,
+      targetLevelId: targetLevelId,
+      status: 'Draft' as const,
+      finalScore: 3.0,
+      evaluationResult: 'MeetsExpectations' as const,
+      dimensions: [
+        { id: `d_comp_${Date.now()}`, dimension: 'Competencies', weight: 40, score: 3.0 },
+        { id: `d_perf_${Date.now()}`, dimension: 'ProjectPerformance', weight: 30, score: 3.0 },
+        { id: `d_train_${Date.now()}`, dimension: 'Training', weight: 15, score: 3.0 },
+        { id: `d_f360_${Date.now()}`, dimension: 'Feedback360', weight: 10, score: 3.0 },
+        { id: `d_corp_${Date.now()}`, dimension: 'CorporateContribution', weight: 5, score: 3.0 }
+      ],
+      competencies: [
+        { id: `c_c1_${Date.now()}`, competencyId: 'CLIENT_ORIENTATION', expectedStage: 'B', actualStage: 'B', score: 3.0, gap: 0 },
+        { id: `c_c2_${Date.now()}`, competencyId: 'INNOVATION', expectedStage: 'B', actualStage: 'B', score: 3.0, gap: 0 },
+        { id: `c_c3_${Date.now()}`, competencyId: 'HUMAN_RELATIONS', expectedStage: 'B', actualStage: 'B', score: 3.0, gap: 0 },
+        { id: `c_c4_${Date.now()}`, competencyId: 'TEAM_LEADERSHIP', expectedStage: 'A', actualStage: 'B', score: 3.0, gap: 0 },
+        { id: `c_c5_${Date.now()}`, competencyId: 'ORGANIZATION_RESULTS', expectedStage: 'B', actualStage: 'B', score: 3.0, gap: 0 },
+        { id: `c_c6_${Date.now()}`, competencyId: 'PROFESSIONAL_OPENNESS', expectedStage: 'B', actualStage: 'B', score: 3.0, gap: 0 }
+      ],
+      commentsManager: 'Ciclo de evaluación iniciado por el Manager.',
+      commentsHR: '',
+      promotionRecommendation: {
+        ready: false,
+        reason: 'Pendiente de calibración.'
+      }
+    };
+
+    try {
+      const res = await fetch('/api/annual-evaluations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newEvalPayload)
+      });
+      if (res.ok) {
+        onDataRefresh();
+        alert(`Ciclo de evaluación anual iniciado correctamente para ${emp.name} ${emp.surname}.`);
+      }
+    } catch (err) {
+      console.error('Error starting evaluation cycle:', err);
+    }
+  };
+
+  // Formula constants
+  const FORMULA = [
+    { label: 'Competencias de Nivel', weight: 40, color: 'bg-indigo-600' },
+    { label: 'Desempeño de Proyectos (KPIs)', weight: 30, color: 'bg-emerald-500' },
+    { label: 'Formación y Certificaciones', weight: 15, color: 'bg-amber-500' },
+    { label: 'Feedback 360', weight: 10, color: 'bg-blue-500' },
+    { label: 'Contribución Corporativa', weight: 5, color: 'bg-rose-500' }
+  ];
+
+  const handleSelectEval = (ev: AnnualEvaluation) => {
+    setSelectedEval(ev);
+    setAiDraftMarkdown(null);
+    setDraftError(null);
+    setManagerComment(ev.commentsManager || '');
+    setHrComment(ev.commentsHR || '');
+  };
+
+  const handleUpdateStatus = async (newStatus: 'Draft' | 'ManagerReview' | 'Calibration' | 'HRReview' | 'Approved' | 'Closed') => {
+    if (!selectedEval) return;
+    try {
+      const res = await fetch(`/api/annual-evaluations/${selectedEval.evaluationId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status: newStatus,
+          commentsManager: managerComment,
+          commentsHR: hrComment
+        })
+      });
+      if (res.ok) {
+        alert(`Estado de la evaluación actualizado a: ${newStatus}`);
+        onDataRefresh();
+        // update local select state too
+        const updated = await res.json();
+        setSelectedEval(updated);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleDraftAIEvaluation = async () => {
+    if (!selectedEval) return;
+    const emp = employees.find(e => e.employeeId === selectedEval.employeeId);
+    if (!emp) return;
+
+    setIsDraftingLoading(true);
+    setAiDraftMarkdown(null);
+    setDraftError(null);
+
+    // filter checkpoints for this employee
+    const empCheckpoints = checkpoints.filter(c => c.employeeId === emp.employeeId);
+
+    try {
+      const res = await fetch('/api/ai/draft-evaluation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          employee: emp,
+          evaluation: selectedEval,
+          checkpoints: empCheckpoints
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAiDraftMarkdown(data.draft);
+      } else {
+        const err = await res.json();
+        setDraftError(err.error || 'Error redactando la evaluación.');
+      }
+    } catch (e) {
+      setDraftError('Error al conectar con el servidor de inteligencia artificial.');
+    } finally {
+      setIsDraftingLoading(false);
+    }
+  };
+
+  const isHR = userRole === 'RRHH';
+  const isManager = userRole === 'ProjectManager' || userRole === 'RRHH';
+
+  return (
+    <div id="performance-module" className="space-y-6">
+      
+      {/* Weighted Score Formula Rules Panel (Collapsible) */}
+      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 border border-slate-700 rounded-2xl text-white shadow-md overflow-hidden">
+        <button
+          type="button"
+          aria-expanded={isFormulaExpanded}
+          onClick={() => setIsFormulaExpanded(prev => !prev)}
+          className="w-full px-5 py-3.5 flex items-center justify-between gap-3 text-left hover:bg-white/5 transition-colors"
+        >
+          <span className="text-xs text-indigo-400 font-bold uppercase tracking-wider flex items-center gap-2">
+            <Scale className="h-4 w-4 text-indigo-400 shrink-0" />
+            Estándar IT Consulting
+          </span>
+          {isFormulaExpanded ? (
+            <ChevronUp className="h-4 w-4 text-slate-300 shrink-0" />
+          ) : (
+            <ChevronDown className="h-4 w-4 text-slate-300 shrink-0" />
+          )}
+        </button>
+
+        {isFormulaExpanded && (
+          <div className="px-5 pb-5 pt-0.5">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <h3 className="text-base font-bold flex items-center gap-2">
+                  <Scale className="h-5 w-5 text-indigo-400" />
+                  Fórmula Oficial de Evaluación y Coordinación de Calibración
+                </h3>
+                <p className="text-xs text-slate-300 mt-1 max-w-2xl">
+                  Garantizamos la máxima objetividad ponderando múltiples fuentes. El ciclo pasa de los borradores del Manager a la Calibración de RRHH para evitar disparidades de notas.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {FORMULA.map(f => (
+                  <span key={f.label} className="text-[10px] bg-white/10 px-2 py-1 rounded border border-white/10 font-medium">
+                    {f.label}: <strong className="text-indigo-300">{f.weight}%</strong>
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        {/* Left Column: Annual Evaluations Table */}
+        <div className="lg:col-span-5 space-y-6">
+          <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-4">
+            <h3 className="text-sm font-bold text-slate-900 mb-3 flex items-center gap-2">
+              <FileText className="h-4 w-4 text-indigo-600" />
+              Ciclo Anual de Evaluación
+            </h3>
+            <p className="text-xs text-slate-500 mb-4">
+              Selecciona una fila para evaluar dimensiones, comparar contra comités de calibración y generar informes por IA.
+            </p>
+
+            <div className="space-y-3">
+              {evaluations.map((ev) => {
+                const emp = employees.find(e => e.employeeId === ev.employeeId);
+                const isSelected = selectedEval?.evaluationId === ev.evaluationId;
+                
+                // Color codes for results
+                const badgeColor = 
+                  ev.status === 'Closed' ? 'bg-slate-100 text-slate-700' :
+                  ev.status === 'Approved' ? 'bg-emerald-100 text-emerald-800' :
+                  ev.status === 'Calibration' ? 'bg-purple-100 text-purple-800' :
+                  'bg-amber-100 text-amber-800';
+
+                return (
+                  <button
+                    key={ev.evaluationId}
+                    id={`eval-row-${ev.evaluationId}`}
+                    onClick={() => handleSelectEval(ev)}
+                    className={`w-full text-left p-3.5 rounded-xl border text-xs transition space-y-2 flex flex-col ${
+                      isSelected ? 'bg-indigo-50/75 border-indigo-300 ring-1 ring-indigo-500' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    <div className="flex justify-between items-start gap-2 w-full">
+                      <div className="min-w-0 flex-1">
+                        <TruncatedTooltip
+                          text={emp ? `${emp.name} ${emp.surname}` : 'Colaborador Genérico'}
+                          className="font-bold text-slate-950 text-xs truncate block"
+                        />
+                        <TruncatedTooltip
+                          text={`${careerPaths.find(p => p.id === emp?.currentCareerPathId)?.name || ''} · Ciclo ${ev.year}`}
+                          className="text-[10px] text-slate-500 mt-0.5 truncate block"
+                        />
+                      </div>
+                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase shrink-0 ${badgeColor}`}>
+                        {ev.status}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between text-[11px] pt-1 border-t border-slate-200/50 w-full">
+                      <div>
+                        Nivel: <strong className="text-slate-700">{careerLevels.find(l => l.id === ev.currentLevelId)?.levelCode}</strong>
+                        <span className="text-slate-300 mx-1">→</span>
+                        Objetivo: <strong className="text-indigo-600">{careerLevels.find(l => l.id === ev.targetLevelId)?.levelCode}</strong>
+                      </div>
+                      <div className="font-bold text-indigo-700">
+                        Score: {ev.finalScore}/5
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Card: Colaboradores sin Evaluación Activa */}
+          <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-4">
+            <h3 className="text-sm font-bold text-slate-900 mb-3 flex items-center gap-2">
+              <Users className="h-4 w-4 text-indigo-600" />
+              Colaboradores sin Evaluación Anual ({employees.filter(emp => !evaluations.some(ev => ev.employeeId === emp.employeeId)).length})
+            </h3>
+            <p className="text-xs text-slate-500 mb-3">
+              Estos colaboradores están registrados en la plantilla pero no tienen abierto un expediente para el ciclo actual. Haz clic en "Iniciar" para abrir su proceso.
+            </p>
+            {employees.filter(emp => !evaluations.some(ev => ev.employeeId === emp.employeeId)).length === 0 ? (
+              <p className="text-xs text-slate-400 italic bg-slate-50 p-3 rounded-lg border border-slate-150">
+                Todos los colaboradores tienen un proceso de evaluación abierto.
+              </p>
+            ) : (
+              <div className="space-y-2 max-h-[250px] overflow-y-auto">
+                {employees
+                  .filter(emp => !evaluations.some(ev => ev.employeeId === emp.employeeId))
+                  .map((emp) => (
+                    <div key={emp.employeeId} className="flex justify-between items-center gap-2 p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1 min-w-0">
+                          <span className="text-[10px] font-mono bg-slate-200 text-slate-700 px-1 py-0.5 rounded font-bold shrink-0">
+                            {emp.employeeId}
+                          </span>
+                          <TruncatedTooltip
+                            text={`${emp.name} ${emp.surname}`}
+                            className="font-bold text-slate-900 truncate block min-w-0"
+                          />
+                        </div>
+                        <TruncatedTooltip
+                          text={`${careerPaths.find(p => p.id === emp.currentCareerPathId)?.name || 'Especialista'} | ${careerLevels.find(l => l.id === emp.currentLevelId)?.levelCode || ''}`}
+                          className="text-[10px] text-slate-500 truncate block"
+                        />
+                      </div>
+                      <button
+                        onClick={() => handleCreateEvaluation(emp.employeeId)}
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-[10px] px-2.5 py-1 rounded transition flex items-center gap-0.5 shrink-0"
+                      >
+                        <Plus className="h-3 w-3" /> Iniciar
+                      </button>
+                    </div>
+                  ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Right Column: Deep Score Evaluation Report Card */}
+        <div className="lg:col-span-7 space-y-6">
+          {!selectedEval ? (
+            <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-8 text-center text-slate-400 min-h-[500px] flex flex-col justify-center items-center">
+              <Award className="h-12 w-12 mb-3 text-slate-300" />
+              <h3 className="text-sm font-bold text-slate-800">Tarjeta de Calibración de Desempeño</h3>
+              <p className="text-xs text-slate-500 max-w-sm mt-1">
+                Haz clic en una ficha de evaluación anual para abrir el calibrador grupal, revisar objetivos por peso y redactar feedbacks por IA.
+              </p>
+            </div>
+          ) : (
+            <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-4 space-y-6">
+              {/* Header card info */}
+              <div className="border-b-2 border-slate-200 pb-4">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider block">Expediente de Calibración {selectedEval.year}</span>
+                    <h3 className="text-base font-bold text-slate-900">
+                      {employees.find(e => e.employeeId === selectedEval.employeeId)?.name} {employees.find(e => e.employeeId === selectedEval.employeeId)?.surname}
+                    </h3>
+                    <p className="text-xs text-slate-500">
+                      Fase Actual del Proceso: <span className="text-indigo-700 font-semibold">{selectedEval.status}</span>
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setSelectedEval(null)}
+                    className="text-xs text-slate-400 hover:text-slate-600"
+                  >
+                    Cerrar
+                  </button>
+                </div>
+              </div>
+
+              {/* Dimensions Breakdown Slider view */}
+              <div>
+                <h4 className="text-xs font-bold text-slate-900 mb-3 uppercase tracking-wider text-slate-500">
+                  Desglose de Dimensiones de la Evaluación (Ponderación Real)
+                </h4>
+                <div className="space-y-3">
+                  {selectedEval.dimensions.map((dim) => {
+                    const formulaDef = FORMULA.find(f => f.label.toLowerCase().includes(dim.dimension.toLowerCase().substring(0, 5))) || FORMULA[0];
+                    const canEdit = userRole === 'RRHH' || userRole === 'ProjectManager';
+                    
+                    return (
+                      <div key={dim.id} className="bg-slate-50 border border-slate-150 rounded-lg p-2.5">
+                        <div className="flex justify-between items-center gap-2 text-xs mb-1">
+                          <TruncatedTooltip text={dim.dimension} className="font-semibold text-slate-800 truncate min-w-0" />
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className="text-[10px] text-slate-500 font-medium">
+                              Peso: {dim.weight}% | Score:
+                            </span>
+                            {canEdit && selectedEval.status !== 'Closed' ? (
+                              <input
+                                type="number"
+                                min="1.0"
+                                max="5.0"
+                                step="0.1"
+                                value={dim.score}
+                                onChange={(e) => handleUpdateDimensionScore(dim.id, Number(e.target.value))}
+                                className="w-14 text-xs font-bold text-indigo-600 bg-white border border-slate-300 rounded px-1 text-center py-0.5 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                              />
+                            ) : (
+                              <strong className="text-indigo-600">{dim.score}/5</strong>
+                            )}
+                          </div>
+                        </div>
+                        <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
+                          <div 
+                            className={`${formulaDef.color} h-full rounded-full`} 
+                            style={{ width: `${(dim.score / 5) * 100}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Checkpoints Continuos del Colaborador */}
+              {(() => {
+                const selectedEmp = employees.find(e => e.employeeId === selectedEval.employeeId);
+                const levelId = selectedEmp?.currentLevelId || selectedEval.currentLevelId;
+                const levelName = careerLevels.find(l => l.id === levelId)?.levelCode || levelId;
+                const requiredLevelScore = getLevelTargetScore(levelId);
+
+                // Cards ordered newest to oldest (Q4 -> Q1)
+                const empCheckpointsDesc = checkpoints
+                  .filter(chk => chk.employeeId === selectedEval.employeeId)
+                  .sort((a, b) => new Date(b.reviewDate).getTime() - new Date(a.reviewDate).getTime());
+
+                const toggleCheckpoint = (id: string) => {
+                  setExpandedCheckpoints(prev => ({
+                    ...prev,
+                    [id]: !prev[id]
+                  }));
+                };
+
+                return (
+                  <div className="border-t-2 border-slate-200 pt-5 space-y-4">
+                    <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                      Historial de Checkpoints de Rendimiento (Evaluación Continua)
+                    </h4>
+
+                    {/* Progress Chart (only when there is > 1 checkpoint) */}
+                    {empCheckpointsDesc.length > 1 && (
+                      <CheckpointProgressChart
+                        checkpoints={empCheckpointsDesc}
+                        competencies={competencies}
+                        requiredScore={requiredLevelScore}
+                        levelLabel={levelName}
+                        careerPathId={selectedEmp?.currentCareerPathId || ''}
+                        levelId={levelId}
+                      />
+                    )}
+
+                    {empCheckpointsDesc.length === 0 ? (
+                      <div className="text-xs text-slate-500 italic bg-slate-50 p-4 rounded-xl border border-slate-150 space-y-1">
+                        <p className="font-semibold text-slate-700">No hay checkpoints continuos registrados aún.</p>
+                        <p className="text-[11px] text-slate-400">Puedes registrar checkpoints en la sección "Desarrollo y Checkpoints" para que sirvan de base para calibrar esta evaluación.</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2.5">
+                        {empCheckpointsDesc.map((chk) => {
+                          const isExpanded = Boolean(expandedCheckpoints[chk.id]);
+                          const avgScore =
+                            chk.scores && chk.scores.length > 0
+                              ? chk.scores.reduce((sum, s) => sum + s.score, 0) / chk.scores.length
+                              : 0;
+                          const meetsLevelMeta = avgScore >= requiredLevelScore;
+
+                          return (
+                            <div key={chk.id} className="bg-slate-50 border border-slate-200 rounded-xl shadow-xs overflow-hidden">
+                              <button
+                                type="button"
+                                aria-expanded={isExpanded}
+                                onClick={() => toggleCheckpoint(chk.id)}
+                                className="w-full px-3.5 py-2.5 flex items-center justify-between gap-3 text-left hover:bg-slate-100/70 transition-colors"
+                              >
+                                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 min-w-0">
+                                  <span className="text-xs font-mono tabular-nums font-bold text-slate-900">
+                                    {chk.reviewDate}
+                                  </span>
+                                  <span className="text-slate-300" aria-hidden="true">·</span>
+                                  <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                                    {chk.reviewType}
+                                  </span>
+                                  <TruncatedTooltip
+                                    text={`Proyecto: ${chk.projectId}`}
+                                    className="text-[10px] text-slate-500 font-medium truncate max-w-full min-w-0"
+                                  >
+                                    Proyecto: <strong className="text-slate-700">{chk.projectId}</strong>
+                                  </TruncatedTooltip>
+                                </div>
+
+                                <div className="flex items-center gap-2.5 shrink-0">
+                                  <div className="text-right">
+                                    <span className="text-xs font-mono tabular-nums font-bold text-slate-900">
+                                      <span className={meetsLevelMeta ? 'text-emerald-700' : 'text-amber-700'}>
+                                        {avgScore.toFixed(2)}
+                                      </span>
+                                      <span className="text-slate-400 font-normal"> / {requiredLevelScore.toFixed(2)}</span>
+                                    </span>
+                                  </div>
+                                  {isExpanded ? (
+                                    <ChevronUp className="h-4 w-4 text-slate-400" />
+                                  ) : (
+                                    <ChevronDown className="h-4 w-4 text-slate-400" />
+                                  )}
+                                </div>
+                              </button>
+
+                              {isExpanded && (
+                                <div className="px-3.5 pb-3.5 pt-2.5 border-t border-slate-200/50 space-y-2.5">
+                                  {chk.comments && (
+                                    <p className="text-xs text-slate-600 italic bg-white p-2.5 rounded-lg border border-slate-150 leading-relaxed">
+                                      "{chk.comments}"
+                                    </p>
+                                  )}
+
+                                  {/* Checkpoint Scores and KPIs breakdown */}
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+                                    {chk.scores && chk.scores.length > 0 && (
+                                      <div className="space-y-1">
+                                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Competencias del Checkpoint</span>
+                                        <div className="space-y-1">
+                                          {chk.scores.map(sc => {
+                                            const compName = competencies.find(c => c.id === sc.competencyId)?.name || sc.competencyId;
+                                            return (
+                                              <div key={sc.competencyId} className="text-[10px] flex justify-between items-center gap-2 bg-white px-2 py-1 rounded border border-slate-150">
+                                                <TruncatedTooltip
+                                                  text={compName}
+                                                  className="text-slate-500 truncate max-w-[130px] font-medium block min-w-0"
+                                                />
+                                                <strong className="text-indigo-600 font-bold bg-indigo-50 px-1 py-0.5 rounded shrink-0">{sc.score}/5</strong>
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {chk.kpis && chk.kpis.length > 0 && (
+                                      <div className="space-y-1">
+                                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">KPIs Medidos</span>
+                                        <div className="space-y-1">
+                                          {chk.kpis.map(kp => (
+                                            <div key={kp.id || kp.kpi} className="text-[10px] flex justify-between items-center gap-2 bg-white px-2 py-1 rounded border border-slate-150">
+                                              <TruncatedTooltip
+                                                text={kp.kpi}
+                                                className="text-slate-500 truncate font-medium block min-w-0"
+                                              />
+                                              <span className="font-semibold shrink-0">
+                                                <strong className="text-emerald-600">{kp.currentValue}</strong> <span className="text-slate-300">/</span> <span className="text-slate-400">{kp.targetValue}</span>
+                                              </span>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+ 
+              {/* Diagnóstico Integral SSTD (Medición de Etapas y Progresión) */}
+              {(() => {
+                const emp = employees.find(e => e.employeeId === selectedEval.employeeId);
+                if (!emp) return null;
+
+                const empCheckpoints = checkpoints
+                  .filter(chk => chk.employeeId === selectedEval.employeeId)
+                  .sort((a, b) => new Date(a.reviewDate).getTime() - new Date(b.reviewDate).getTime());
+
+                // 1. Determine actual stage per competency
+                // We aggregate latest checkpoint stage or fall back to annual eval / scoreToStage
+                const actualCompetencyStatus = competencies.map(comp => {
+                  const reqStageCurrent = getRequiredStage(emp.currentCareerPathId, emp.currentLevelId, comp.id);
+                  
+                  // Get next level target stage
+                  const currentLvlNum = parseInt(emp.currentLevelId.replace('L', '')) || 1;
+                  const targetLvlId = `L${Math.min(7, currentLvlNum + 1)}`;
+                  const reqStageTarget = getRequiredStage(emp.currentCareerPathId, targetLvlId, comp.id);
+
+                  // Find latest checkpoint score and stage for this competency
+                  let latestScore = 3.0;
+                  let latestStage: CompetencyStage = 'B';
+                  let hasCheckpointValue = false;
+
+                  if (empCheckpoints.length > 0) {
+                    for (let i = empCheckpoints.length - 1; i >= 0; i--) {
+                      const scoreItem = empCheckpoints[i].scores?.find(s => s.competencyId === comp.id);
+                      if (scoreItem) {
+                        latestScore = scoreItem.score;
+                        latestStage = scoreItem.stage || scoreToStage(scoreItem.score);
+                        hasCheckpointValue = true;
+                        break;
+                      }
+                    }
+                  }
+
+                  // If no checkpoints, try evaluation competency
+                  if (!hasCheckpointValue) {
+                    const evalComp = selectedEval.competencies?.find(c => c.competencyId === comp.id);
+                    if (evalComp) {
+                      latestScore = evalComp.score || 3.0;
+                      latestStage = (evalComp.actualStage as CompetencyStage) || scoreToStage(latestScore);
+                    } else {
+                      latestStage = scoreToStage(latestScore);
+                    }
+                  }
+
+                  // Calculate progression if multiple checkpoints exist
+                  let progressionText = "Estable";
+                  let progressionColor = "text-slate-500";
+                  if (empCheckpoints.length > 1) {
+                    let firstScore = 0;
+                    let firstStage: CompetencyStage | null = null;
+                    
+                    // Find first checkpoint score/stage for this competency
+                    for (let i = 0; i < empCheckpoints.length; i++) {
+                      const scoreItem = empCheckpoints[i].scores?.find(s => s.competencyId === comp.id);
+                      if (scoreItem) {
+                        firstScore = scoreItem.score;
+                        firstStage = scoreItem.stage || scoreToStage(scoreItem.score);
+                        break;
+                      }
+                    }
+
+                    if (firstStage) {
+                      const stageOrder = ['A', 'B', 'C', 'D', 'E'];
+                      const firstIdx = stageOrder.indexOf(firstStage);
+                      const latestIdx = stageOrder.indexOf(latestStage);
+                      if (latestIdx > firstIdx) {
+                        progressionText = `▲ Subió de ${firstStage} a ${latestStage}`;
+                        progressionColor = "text-emerald-600 font-bold";
+                      } else if (latestIdx < firstIdx) {
+                        progressionText = `▼ Bajó de ${firstStage} a ${latestStage}`;
+                        progressionColor = "text-rose-600";
+                      } else if (latestScore > firstScore) {
+                        progressionText = `▲ Nota mejoró (${firstScore} ➔ ${latestScore})`;
+                        progressionColor = "text-emerald-500";
+                      } else {
+                        progressionText = "Consolidado";
+                        progressionColor = "text-slate-400";
+                      }
+                    }
+                  } else if (empCheckpoints.length === 1) {
+                    progressionText = "Un solo checkpoint registrado";
+                    progressionColor = "text-slate-400";
+                  } else {
+                    progressionText = "Sin checkpoints (Evaluación inicial)";
+                    progressionColor = "text-slate-400";
+                  }
+
+                  const stageOrder = ['A', 'B', 'C', 'D', 'E'];
+                  const actualIdx = stageOrder.indexOf(latestStage);
+                  const reqCurrentIdx = stageOrder.indexOf(reqStageCurrent);
+                  const reqTargetIdx = stageOrder.indexOf(reqStageTarget);
+
+                  const meetsCurrent = actualIdx >= reqCurrentIdx;
+                  const meetsTarget = actualIdx >= reqTargetIdx;
+
+                  return {
+                    comp,
+                    latestScore,
+                    latestStage,
+                    reqStageCurrent,
+                    reqStageTarget,
+                    meetsCurrent,
+                    meetsTarget,
+                    progressionText,
+                    progressionColor
+                  };
+                });
+
+                // 2. Aggregate verdicts
+                const unfulfilledCurrent = actualCompetencyStatus.filter(s => !s.meetsCurrent);
+                const unfulfilledTarget = actualCompetencyStatus.filter(s => !s.meetsTarget);
+
+                const isAtCorrectLevel = unfulfilledCurrent.length === 0;
+                const isReadyForPromotion = unfulfilledTarget.length === 0;
+
+                // 3. Evaluate progression within current level
+                // Checked if overall progress is positive or if consolidates current requirements perfectly
+                const hasImprovedInSome = actualCompetencyStatus.some(s => s.progressionText.includes('▲'));
+                const hasRegressionInSome = actualCompetencyStatus.some(s => s.progressionText.includes('▼'));
+                
+                let progressionVerdict = "Consolidación estable.";
+                
+                if (hasImprovedInSome && !hasRegressionInSome) {
+                  progressionVerdict = "Excelente progresión: ha avanzado progresivamente dentro de su nivel.";
+                } else if (isAtCorrectLevel && empCheckpoints.length >= 2) {
+                  progressionVerdict = "Buen desempeño y consistencia: competencias plenamente consolidadas en el nivel.";
+                } else if (hasRegressionInSome) {
+                  progressionVerdict = "Se observan retrocesos en algunas competencias; requiere seguimiento.";
+                } else if (empCheckpoints.length === 0) {
+                  progressionVerdict = "Falta registrar checkpoints de evaluación continua para medir progresión.";
+                }
+
+                return (
+                  <div className="border-t-2 border-slate-200 pt-5 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                        <Scale className="h-4 w-4 text-indigo-600 animate-pulse" />
+                        Diagnóstico de Idoneidad SSTD (Medición de Etapas)
+                      </h4>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      {/* Card 1: Nivel Actual */}
+                      <div className={`p-3 rounded-lg border text-xs space-y-1.5 ${
+                        isAtCorrectLevel ? 'bg-emerald-50/50 border-emerald-150' : 'bg-rose-50/50 border-rose-150'
+                      }`}>
+                        <span className="font-bold uppercase text-[9px] text-slate-500 block">1. Nivel Actual</span>
+                        <div className={`text-xs font-extrabold ${isAtCorrectLevel ? 'text-emerald-700' : 'text-rose-700'}`}>
+                          {isAtCorrectLevel ? '✓ Nivel Correcto' : '⚠ Nivel por Consolidar'}
+                        </div>
+                        <p className="text-[10px] text-slate-600 leading-snug">
+                          {isAtCorrectLevel 
+                            ? 'El colaborador cuenta con las etapas requeridas para su nivel actual en todas las competencias.' 
+                            : `Tiene brechas por cubrir en ${unfulfilledCurrent.length} competencia(s) para consolidar su nivel actual.`
+                          }
+                        </p>
+                      </div>
+
+                      {/* Card 2: Promoción */}
+                      <div className={`p-3 rounded-lg border text-xs space-y-1.5 ${
+                        isReadyForPromotion ? 'bg-indigo-50/50 border-indigo-150 animate-bounce' : 'bg-slate-50 border-slate-200'
+                      }`}>
+                        <span className="font-bold uppercase text-[9px] text-slate-500 block">2. Aptitud para Promoción</span>
+                        <div className={`text-xs font-extrabold ${isReadyForPromotion ? 'text-indigo-700' : 'text-slate-600'}`}>
+                          {isReadyForPromotion ? '★ Listo para Promoción' : '☐ En Consolidación'}
+                        </div>
+                        <p className="text-[10px] text-slate-600 leading-snug">
+                          {isReadyForPromotion 
+                            ? 'Cumple con los requisitos de etapa del siguiente nivel. ¡Recomendado para promoción!' 
+                            : `Aún no cumple el nivel objetivo. Pendiente consolidar ${unfulfilledTarget.length} competencia(s).`
+                          }
+                        </p>
+                      </div>
+
+                      {/* Card 3: Progresión */}
+                      <div className={`p-3 rounded-lg border text-xs space-y-1.5 bg-white border-slate-200`}>
+                        <span className="font-bold uppercase text-[9px] text-slate-500 block">3. Progresión Interna</span>
+                        <div className="text-xs font-extrabold text-slate-800 flex items-center gap-1">
+                          {hasImprovedInSome ? '▲ Progreso Activo' : '● Consolidado'}
+                        </div>
+                        <p className="text-[10px] text-slate-600 leading-snug">
+                          {progressionVerdict}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Breakdown table list of competencies actual vs required current/next */}
+                    <div className="bg-slate-50 border border-slate-150 rounded-lg p-2.5">
+                      <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider pb-1.5 border-b border-slate-200 flex justify-between">
+                        <span>Competencia</span>
+                        <div className="flex gap-4">
+                          <span className="w-14 text-center">Evaluado</span>
+                          <span className="w-12 text-center">Meta Nivel</span>
+                          <span className="w-12 text-center">Meta Prom.</span>
+                          <span className="w-16 text-right">Progreso</span>
+                        </div>
+                      </div>
+
+                      <div className="divide-y divide-slate-200/60">
+                        {actualCompetencyStatus.map(({ comp, latestScore, latestStage, reqStageCurrent, reqStageTarget, meetsCurrent, meetsTarget, progressionText, progressionColor }) => (
+                          <div key={comp.id} className="py-2 flex justify-between items-center gap-2 text-xs">
+                            <div className="space-y-0.5 min-w-0">
+                              <TruncatedTooltip
+                                text={comp.name}
+                                className="font-bold text-slate-800 block max-w-[120px] truncate"
+                              />
+                              <span className="text-[10px] text-slate-400 font-mono">Nota: {latestScore.toFixed(1)}</span>
+                            </div>
+                            <div className="flex gap-4 items-center font-semibold shrink-0">
+                              {/* Evaluado */}
+                              <span className="w-14 text-center text-[10px] font-extrabold text-indigo-700 bg-indigo-50 border border-indigo-100 py-0.5 rounded uppercase">
+                                Etapa {latestStage.toLowerCase()}
+                              </span>
+                              {/* Meta Nivel */}
+                              <span className={`w-12 text-center text-[10px] font-bold py-0.5 rounded uppercase ${
+                                meetsCurrent ? 'text-emerald-700 bg-emerald-50' : 'text-rose-700 bg-rose-50'
+                              }`}>
+                                {reqStageCurrent.toLowerCase()}
+                              </span>
+                              {/* Meta Promoción */}
+                              <span className={`w-12 text-center text-[10px] font-bold py-0.5 rounded uppercase ${
+                                meetsTarget ? 'text-indigo-700 bg-indigo-50' : 'text-slate-500 bg-slate-100'
+                              }`}>
+                                {reqStageTarget.toLowerCase()}
+                              </span>
+                              {/* Progresión */}
+                              <TruncatedTooltip
+                                text={progressionText}
+                                className={`w-16 text-right text-[9.5px] truncate block ${progressionColor}`}
+                              />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Promo recommendation */}
+              <div className="bg-indigo-50 border border-indigo-150 rounded-lg p-3">
+                <h5 className="text-xs font-bold text-indigo-950 flex items-center gap-1">
+                  <Award className="h-4 w-4 text-indigo-600" />
+                  Dictamen de Promoción del Framework
+                </h5>
+                <p className="text-xs text-indigo-900 mt-1 font-semibold">
+                  Apto para promoción: <span className={selectedEval.promotionRecommendation.ready ? 'text-emerald-700 font-bold' : 'text-rose-700 font-bold'}>
+                    {selectedEval.promotionRecommendation.ready ? 'SÍ, RECOMENDADO' : 'NO, EN CONSOLIDACIÓN'}
+                  </span>
+                </p>
+                <p className="text-[11px] text-indigo-700/80 mt-1">
+                  Motivo: {selectedEval.promotionRecommendation.reason}
+                </p>
+              </div>
+
+              {/* AI Draft Assist Action button */}
+              <div className="border-t-2 border-slate-200 pt-5 space-y-4">
+                <div className="flex justify-between items-center">
+                  <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider text-slate-500">
+                    Borrador de Carta de Feedback (Generador IA)
+                  </h4>
+                  <button
+                    onClick={handleDraftAIEvaluation}
+                    disabled={isDraftingLoading}
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs px-3 py-1.5 rounded flex items-center gap-1.5 transition disabled:opacity-50"
+                  >
+                    {isDraftingLoading ? (
+                      <>
+                        <div className="animate-spin h-3.5 w-3.5 border-b-2 border-white rounded-full" />
+                        Redactando...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="h-3.5 w-3.5" /> Borrador por Gemini AI
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {aiDraftMarkdown && (
+                  <div className="bg-indigo-50/30 border border-indigo-150 rounded-xl p-4 max-h-[250px] overflow-y-auto">
+                    <MarkdownView content={aiDraftMarkdown} />
+                  </div>
+                )}
+
+                {draftError && (
+                  <div className="bg-red-50 text-red-700 border border-red-200 text-xs rounded p-2">
+                    {draftError}
+                  </div>
+                )}
+              </div>
+
+              {/* Status Update & Calibration Comments (Sync between Manager and HR) */}
+              <div className="border-t-2 border-slate-200 pt-5 space-y-4">
+                <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider text-slate-500">
+                  Comentarios y Alineación del Comité (Manager vs RRHH)
+                </h4>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">Notas de Desempeño (Manager)</label>
+                    <textarea
+                      placeholder="Escribe comentarios justificando la nota técnica..."
+                      value={managerComment}
+                      onChange={e => setManagerComment(e.target.value)}
+                      disabled={selectedEval.status === 'Closed' || !isManager}
+                      className="w-full border rounded p-1.5 bg-white text-xs h-20 disabled:bg-slate-50"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">Notas de Calibración (RRHH)</label>
+                    <textarea
+                      placeholder="Escribe comentarios justificando alineación grupal..."
+                      value={hrComment}
+                      onChange={e => setHrComment(e.target.value)}
+                      disabled={selectedEval.status === 'Closed' || !isHR}
+                      className="w-full border rounded p-1.5 bg-white text-xs h-20 disabled:bg-slate-50"
+                    />
+                  </div>
+                </div>
+
+                {/* Workflow Transitions */}
+                {selectedEval.status !== 'Closed' && isManager && (
+                  <div className="flex flex-wrap gap-2 justify-end pt-2">
+                    {selectedEval.status === 'Draft' && (
+                      <button
+                        onClick={() => handleUpdateStatus('ManagerReview')}
+                        className="bg-amber-600 text-white font-semibold text-xs px-3 py-1.5 rounded hover:bg-amber-700 transition"
+                      >
+                        Enviar a Revisión de Manager
+                      </button>
+                    )}
+                    {selectedEval.status === 'ManagerReview' && (
+                      <button
+                        onClick={() => handleUpdateStatus('Calibration')}
+                        className="bg-purple-600 text-white font-semibold text-xs px-3 py-1.5 rounded hover:bg-purple-700 transition"
+                      >
+                        Enviar a Calibración Grupal
+                      </button>
+                    )}
+                    {selectedEval.status === 'Calibration' && isHR && (
+                      <button
+                        onClick={() => handleUpdateStatus('HRReview')}
+                        className="bg-indigo-600 text-white font-semibold text-xs px-3 py-1.5 rounded hover:bg-indigo-700 transition"
+                      >
+                        Avanzar a Revisión de RRHH
+                      </button>
+                    )}
+                    {selectedEval.status === 'HRReview' && isHR && (
+                      <button
+                        onClick={() => handleUpdateStatus('Approved')}
+                        className="bg-emerald-600 text-white font-semibold text-xs px-3 py-1.5 rounded hover:bg-emerald-700 transition"
+                      >
+                        Aprobar Evaluación
+                      </button>
+                    )}
+                    {selectedEval.status === 'Approved' && isHR && (
+                      <button
+                        onClick={() => handleUpdateStatus('Closed')}
+                        className="bg-slate-700 text-white font-semibold text-xs px-3 py-1.5 rounded hover:bg-slate-800 transition"
+                      >
+                        Cerrar y Publicar
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {selectedEval.status === 'Closed' && (
+                  <div className="flex items-center gap-1 text-xs text-slate-500 font-medium justify-center bg-slate-50 border border-slate-150 p-2 rounded">
+                    <Lock className="h-4 w-4" />
+                    Esta evaluación ha sido calibrada y cerrada de forma definitiva.
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
