@@ -1,8 +1,213 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Default deny catch-all
     match /{document=**} {
-      allow read, write: if true;
+      allow read, write: if false;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isNonEmptyString(val, maxLen) {
+      return val is string && val.size() > 0 && val.size() <= maxLen;
+    }
+
+    function isValidCareerFamily(data) {
+      return isNonEmptyString(data.id, 128)
+        && isNonEmptyString(data.code, 64)
+        && isNonEmptyString(data.name, 200)
+        && data.active is bool;
+    }
+
+    function isValidCareerPath(data) {
+      return isNonEmptyString(data.id, 128)
+        && isNonEmptyString(data.careerFamilyId, 128)
+        && isNonEmptyString(data.code, 64)
+        && isNonEmptyString(data.name, 200);
+    }
+
+    function isValidCareerLevel(data) {
+      return isNonEmptyString(data.id, 128)
+        && isNonEmptyString(data.levelCode, 64)
+        && data.levelNumber is number
+        && isNonEmptyString(data.name, 200);
+    }
+
+    function isValidCompetency(data) {
+      return isNonEmptyString(data.id, 128)
+        && isNonEmptyString(data.code, 128)
+        && isNonEmptyString(data.name, 200)
+        && isNonEmptyString(data.type, 64);
+    }
+
+    function isValidTraining(data) {
+      return isNonEmptyString(data.trainingId, 128)
+        && isNonEmptyString(data.name, 300)
+        && isNonEmptyString(data.provider, 200);
+    }
+
+    function isValidEmployee(data) {
+      return isNonEmptyString(data.employeeId, 128)
+        && isNonEmptyString(data.name, 200)
+        && isNonEmptyString(data.surname, 200)
+        && isNonEmptyString(data.currentLevelId, 64)
+        && isNonEmptyString(data.currentCareerPathId, 64);
+    }
+
+    function isValidProject(data) {
+      return isNonEmptyString(data.projectId, 128)
+        && isNonEmptyString(data.projectName, 300)
+        && isNonEmptyString(data.status, 64);
+    }
+
+    function isValidRoleRequest(data) {
+      return isNonEmptyString(data.id, 128)
+        && isNonEmptyString(data.projectId, 128)
+        && isNonEmptyString(data.careerPathId, 128)
+        && isNonEmptyString(data.requiredLevelId, 64);
+    }
+
+    function isValidAssignment(data) {
+      return isNonEmptyString(data.assignmentId, 128)
+        && isNonEmptyString(data.employeeId, 128)
+        && isNonEmptyString(data.projectId, 128);
+    }
+
+    function isValidCheckpoint(data) {
+      return isNonEmptyString(data.id, 128)
+        && isNonEmptyString(data.employeeId, 128)
+        && isNonEmptyString(data.projectId, 128)
+        && isNonEmptyString(data.reviewerId, 128);
+    }
+
+    function isValidDevPlan(data) {
+      return isNonEmptyString(data.id, 128)
+        && isNonEmptyString(data.employeeId, 128)
+        && data.year is number
+        && isNonEmptyString(data.status, 64);
+    }
+
+    function isValidAnnualEvaluation(data) {
+      return isNonEmptyString(data.evaluationId, 128)
+        && isNonEmptyString(data.employeeId, 128)
+        && data.year is number
+        && isNonEmptyString(data.status, 64);
+    }
+
+    function isValidDivisionBudget(data) {
+      return isNonEmptyString(data.id, 128)
+        && isNonEmptyString(data.division, 200)
+        && data.raiseBudgetEur is number
+        && data.raiseBudgetEur >= 0
+        && isNonEmptyString(data.updatedAt, 64);
+    }
+
+    // Connection health check document
+    match /test/connection {
+      allow get: if true;
+    }
+
+    match /careerFamilies/{familyId} {
+      allow list: if true;
+      allow get: if isValidId(familyId);
+      allow create, update: if isValidId(familyId) && isValidCareerFamily(incoming());
+      allow delete: if false;
+    }
+
+    match /careerPaths/{pathId} {
+      allow list: if true;
+      allow get: if isValidId(pathId);
+      allow create, update: if isValidId(pathId) && isValidCareerPath(incoming());
+      allow delete: if false;
+    }
+
+    match /careerLevels/{levelId} {
+      allow list: if true;
+      allow get: if isValidId(levelId);
+      allow create, update: if isValidId(levelId) && isValidCareerLevel(incoming());
+      allow delete: if false;
+    }
+
+    match /competencies/{competencyId} {
+      allow list: if true;
+      allow get: if isValidId(competencyId);
+      allow create, update: if isValidId(competencyId) && isValidCompetency(incoming());
+      allow delete: if false;
+    }
+
+    match /trainings/{trainingId} {
+      allow list: if true;
+      allow get: if isValidId(trainingId);
+      allow create, update: if isValidId(trainingId) && isValidTraining(incoming());
+      allow delete: if false;
+    }
+
+    match /employees/{employeeId} {
+      allow list: if true;
+      allow get: if isValidId(employeeId);
+      allow create, update: if isValidId(employeeId) && isValidEmployee(incoming());
+      allow delete: if false;
+    }
+
+    match /projects/{projectId} {
+      allow list: if true;
+      allow get: if isNonEmptyString(projectId, 128);
+      allow create, update: if isNonEmptyString(projectId, 128) && isValidProject(incoming());
+      allow delete: if false;
+    }
+
+    match /roleRequests/{requestId} {
+      allow list: if true;
+      allow get: if isNonEmptyString(requestId, 128);
+      allow create, update: if isNonEmptyString(requestId, 128) && isValidRoleRequest(incoming());
+      allow delete: if false;
+    }
+
+    match /assignments/{assignmentId} {
+      allow list: if true;
+      allow get: if isValidId(assignmentId);
+      allow create, update: if isValidId(assignmentId) && isValidAssignment(incoming());
+      allow delete: if false;
+    }
+
+    match /checkpoints/{checkpointId} {
+      allow list: if true;
+      allow get: if isValidId(checkpointId);
+      allow create, update: if isValidId(checkpointId) && isValidCheckpoint(incoming());
+      allow delete: if false;
+    }
+
+    match /devPlans/{planId} {
+      allow list: if true;
+      allow get: if isValidId(planId);
+      allow create, update: if isValidId(planId) && isValidDevPlan(incoming());
+      allow delete: if false;
+    }
+
+    match /annualEvaluations/{evaluationId} {
+      allow list: if true;
+      allow get: if isValidId(evaluationId);
+      allow create, update: if isValidId(evaluationId) && isValidAnnualEvaluation(incoming());
+      allow delete: if false;
+    }
+
+    match /divisionBudgets/{budgetId} {
+      allow list: if true;
+      allow get: if isValidId(budgetId);
+      allow create, update: if isValidId(budgetId) && isValidDivisionBudget(incoming());
+      allow delete: if isValidId(budgetId);
+    }
+
+    match /systemMeta/{metaId} {
+      allow get: if isValidId(metaId);
+      allow create, update: if isValidId(metaId) && incoming().seeded is bool;
+      allow list, delete: if false;
     }
   }
 }

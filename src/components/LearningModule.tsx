@@ -443,25 +443,28 @@ export default function LearningModule({
               Visualiza su plan de desarrollo, diagnostica brechas de promoción y haz seguimiento en el proyecto.
             </p>
 
-            <div className="space-y-2 max-h-[250px] overflow-y-auto">
+            <div className="space-y-2 max-h-[258px] overflow-y-auto p-1 -m-1">
               {employees.map((emp) => {
                 const isSelected = selectedEmpId === emp.employeeId;
                 return (
                   <button
                     key={emp.employeeId}
                     id={`emp-select-${emp.employeeId}`}
+                    type="button"
                     onClick={() => setSelectedEmpId(emp.employeeId)}
-                    className={`w-full text-left p-2.5 rounded-lg border text-xs transition flex items-center justify-between ${
-                      isSelected ? 'bg-indigo-50 border-indigo-200 ring-1 ring-indigo-500' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
+                    className={`w-full text-left p-2.5 rounded-lg border text-xs transition flex items-center justify-between gap-2 ${
+                      isSelected
+                        ? 'bg-indigo-50 border-indigo-500 ring-2 ring-indigo-500/35 shadow-xs'
+                        : 'bg-slate-50 border-slate-200 hover:bg-slate-100 hover:border-slate-300'
                     }`}
                   >
-                    <div>
-                      <div className="font-bold text-slate-900">{emp.name} {emp.surname}</div>
-                      <div className="text-[10px] text-slate-500 mt-0.5">
+                    <div className="min-w-0">
+                      <div className="font-bold text-slate-900 truncate">{emp.name} {emp.surname}</div>
+                      <div className="text-[10px] text-slate-500 mt-0.5 truncate">
                         {careerPaths.find(p => p.id === emp.currentCareerPathId)?.name}
                       </div>
                     </div>
-                    <span className="text-[10px] font-mono bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded font-bold">
+                    <span className="text-[10px] font-mono bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded font-bold shrink-0">
                       {emp.currentLevelId}
                     </span>
                   </button>
@@ -633,6 +636,8 @@ export default function LearningModule({
                 <div className="bg-slate-50 border border-slate-150 rounded-lg p-3 flex flex-wrap items-center justify-between gap-3 text-xs">
                   <div>
                     Colaborador: <strong className="text-slate-950">{selectedEmployee.name} {selectedEmployee.surname}</strong>
+                    <span className="text-slate-400 mx-1">|</span>
+                    División: <strong className="text-slate-800">{selectedEmployee.division || selectedEmployee.department}</strong>
                     <span className="text-slate-400 mx-1">|</span>
                     Nivel Actual: <span className="bg-slate-200 font-mono text-slate-700 px-1 rounded text-[10px] font-bold">{selectedEmployee.currentLevelId}</span>
                   </div>

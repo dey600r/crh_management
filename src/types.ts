@@ -85,6 +85,7 @@ export interface Employee {
   country: string;
   office: string;
   department: string;
+  division?: string;
   managerId: string; // supervisor
   careerManagerId: string; // career advisor
   currentCareerPathId: string;
@@ -286,6 +287,13 @@ export interface ChatMessage {
   role: 'user' | 'model';
   text: string;
   timestamp: string;
+}
+
+export interface DivisionBudget {
+  id: string;
+  division: string;
+  raiseBudgetEur: number;
+  updatedAt: string;
 }
 
 export type UserRole = 'RRHH' | 'ProjectManager' | 'Colaborador';

@@ -1,11 +1,18 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { 
-  Award, ShieldCheck, FileText, CheckCircle, HelpCircle, ArrowRight, Sparkles, Send, AlertTriangle, Scale, Lock, Plus, Users, ChevronDown, ChevronUp 
+  Award, ShieldCheck, FileText, CheckCircle, HelpCircle, ArrowRight, Sparkles, Send, AlertTriangle, Scale, Lock, Plus, Users, ChevronDown, ChevronUp, TrendingUp, Filter 
 } from 'lucide-react';
-import { AnnualEvaluation, Employee, CheckpointReview, UserRole, CompetencyStage, getRequiredStage, scoreToStage, stageToScore, getLevelTargetScore } from '../types';
+import { AnnualEvaluation, Employee, CheckpointReview, DivisionBudget, UserRole, CompetencyStage, getRequiredStage, scoreToStage, stageToScore, getLevelTargetScore } from '../types';
 import { MarkdownView } from './MarkdownView';
 import CheckpointProgressChart from './CheckpointProgressChart';
 import TruncatedTooltip from './TruncatedTooltip';
+import DivisionBudgetSection from './DivisionBudgetSection';
+import {
+  SALARY_RAISE_STEP_EUR,
+  computeDivisionSalaryRecommendation,
+  formatWholeEur,
+  getEmployeeDivision
+} from '../utils/salaryRecommendation';
 
 interface PerformanceModuleProps {
   userRole: UserRole;
@@ -15,6 +22,8 @@ interface PerformanceModuleProps {
   careerLevels: any[];
   careerPaths: any[];
   competencies: any[];
+  divisionBudgets?: DivisionBudget[];
+  onDivisionBudgetsChange?: (budgets: DivisionBudget[]) => void;
   onDataRefresh: () => void;
 }
 
@@ -26,6 +35,8 @@ export default function PerformanceModule({
   careerLevels,
   careerPaths,
   competencies,
+  divisionBudgets = [],
+  onDivisionBudgetsChange,
   onDataRefresh
 }: PerformanceModuleProps) {
   const [selectedEval, setSelectedEval] = useState<AnnualEvaluation | null>(null);
@@ -40,6 +51,39 @@ export default function PerformanceModule({
   const [hrComment, setHrComment] = useState('');
   const [expandedCheckpoints, setExpandedCheckpoints] = useState<Record<string, boolean>>({});
   const [isFormulaExpanded, setIsFormulaExpanded] = useState(false);
+
+  // Independent division dropdown filters
+  const [evalDivisionFilter, setEvalDivisionFilter] = useState<string>('ALL');
+  const [unassignedDivisionFilter, setUnassignedDivisionFilter] = useState<string>('ALL');
+
+  const availableDivisions = useMemo(() => {
+    const set = new Set<string>();
+    employees.forEach(emp => {
+      const div = getEmployeeDivision(emp);
+      if (div) set.add(div);
+    });
+    divisionBudgets.forEach(b => {
+      if (b.division) set.add(b.division.trim());
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'es'));
+  }, [employees, divisionBudgets]);
+
+  const formatEvalResultLabel = (res: AnnualEvaluation['evaluationResult']) => {
+    switch (res) {
+      case 'Promoted':
+        return 'Promocionado';
+      case 'Outstanding':
+        return 'Sobresaliente';
+      case 'ExceedsExpectations':
+        return 'Supera Expectativas';
+      case 'MeetsExpectations':
+        return 'Cumple Expectativas';
+      case 'Unsatisfactory':
+        return 'Por Debajo';
+      default:
+        return res;
+    }
+  };
 
   // Reset collapsible checkpoint state whenever selected evaluation or checkpoints change:
   // Collapsed by default if > 1 checkpoint; expanded if exactly 1 checkpoint.
@@ -295,112 +339,193 @@ export default function PerformanceModule({
         {/* Left Column: Annual Evaluations Table */}
         <div className="lg:col-span-5 space-y-6">
           <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-4">
-            <h3 className="text-sm font-bold text-slate-900 mb-3 flex items-center gap-2">
-              <FileText className="h-4 w-4 text-indigo-600" />
-              Ciclo Anual de Evaluación
-            </h3>
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <FileText className="h-4 w-4 text-indigo-600 shrink-0" />
+                Ciclo Anual de Evaluación
+              </h3>
+              <div className="flex items-center gap-1.5">
+                <Filter className="h-3.5 w-3.5 text-slate-400 shrink-0" aria-hidden="true" />
+                <select
+                  aria-label="Filtrar evaluaciones por división"
+                  value={evalDivisionFilter}
+                  onChange={e => setEvalDivisionFilter(e.target.value)}
+                  className="text-xs bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-slate-700 font-medium focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 max-w-[190px]"
+                >
+                  <option value="ALL">Todas las divisiones</option>
+                  {availableDivisions.map(div => (
+                    <option key={div} value={div}>
+                      {div}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
             <p className="text-xs text-slate-500 mb-4">
               Selecciona una fila para evaluar dimensiones, comparar contra comités de calibración y generar informes por IA.
             </p>
 
-            <div className="space-y-3">
-              {evaluations.map((ev) => {
+            {(() => {
+              const filteredEvaluations = evaluations.filter(ev => {
+                if (evalDivisionFilter === 'ALL') return true;
                 const emp = employees.find(e => e.employeeId === ev.employeeId);
-                const isSelected = selectedEval?.evaluationId === ev.evaluationId;
-                
-                // Color codes for results
-                const badgeColor = 
-                  ev.status === 'Closed' ? 'bg-slate-100 text-slate-700' :
-                  ev.status === 'Approved' ? 'bg-emerald-100 text-emerald-800' :
-                  ev.status === 'Calibration' ? 'bg-purple-100 text-purple-800' :
-                  'bg-amber-100 text-amber-800';
+                return emp ? getEmployeeDivision(emp) === evalDivisionFilter : false;
+              });
 
+              if (filteredEvaluations.length === 0) {
                 return (
-                  <button
-                    key={ev.evaluationId}
-                    id={`eval-row-${ev.evaluationId}`}
-                    onClick={() => handleSelectEval(ev)}
-                    className={`w-full text-left p-3.5 rounded-xl border text-xs transition space-y-2 flex flex-col ${
-                      isSelected ? 'bg-indigo-50/75 border-indigo-300 ring-1 ring-indigo-500' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
-                    }`}
-                  >
-                    <div className="flex justify-between items-start gap-2 w-full">
-                      <div className="min-w-0 flex-1">
-                        <TruncatedTooltip
-                          text={emp ? `${emp.name} ${emp.surname}` : 'Colaborador Genérico'}
-                          className="font-bold text-slate-950 text-xs truncate block"
-                        />
-                        <TruncatedTooltip
-                          text={`${careerPaths.find(p => p.id === emp?.currentCareerPathId)?.name || ''} · Ciclo ${ev.year}`}
-                          className="text-[10px] text-slate-500 mt-0.5 truncate block"
-                        />
-                      </div>
-                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase shrink-0 ${badgeColor}`}>
-                        {ev.status}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between text-[11px] pt-1 border-t border-slate-200/50 w-full">
-                      <div>
-                        Nivel: <strong className="text-slate-700">{careerLevels.find(l => l.id === ev.currentLevelId)?.levelCode}</strong>
-                        <span className="text-slate-300 mx-1">→</span>
-                        Objetivo: <strong className="text-indigo-600">{careerLevels.find(l => l.id === ev.targetLevelId)?.levelCode}</strong>
-                      </div>
-                      <div className="font-bold text-indigo-700">
-                        Score: {ev.finalScore}/5
-                      </div>
-                    </div>
-                  </button>
+                  <p className="text-xs text-slate-400 italic bg-slate-50 p-3 rounded-lg border border-slate-200">
+                    No hay evaluaciones registradas para la división seleccionada.
+                  </p>
                 );
-              })}
-            </div>
+              }
+
+              return (
+                <div className="space-y-3 max-h-[420px] overflow-y-auto p-1 -m-1">
+                  {filteredEvaluations.map((ev) => {
+                    const emp = employees.find(e => e.employeeId === ev.employeeId);
+                    const isSelected = selectedEval?.evaluationId === ev.evaluationId;
+                    
+                    // Color codes for results
+                    const badgeColor = 
+                      ev.status === 'Closed' ? 'bg-slate-100 text-slate-700' :
+                      ev.status === 'Approved' ? 'bg-emerald-100 text-emerald-800' :
+                      ev.status === 'Calibration' ? 'bg-purple-100 text-purple-800' :
+                      'bg-amber-100 text-amber-800';
+
+                    return (
+                      <button
+                        key={ev.evaluationId}
+                        id={`eval-row-${ev.evaluationId}`}
+                        onClick={() => handleSelectEval(ev)}
+                        className={`w-full text-left p-3.5 rounded-xl border text-xs transition space-y-2 flex flex-col ${
+                          isSelected ? 'bg-indigo-50/75 border-indigo-400 ring-2 ring-indigo-500/40' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        <div className="flex justify-between items-start gap-2 w-full">
+                          <div className="min-w-0 flex-1">
+                            <TruncatedTooltip
+                              text={emp ? `${emp.name} ${emp.surname}` : 'Colaborador Genérico'}
+                              className="font-bold text-slate-950 text-xs truncate block"
+                            />
+                            <TruncatedTooltip
+                              text={`${careerPaths.find(p => p.id === emp?.currentCareerPathId)?.name || ''} · Div: ${emp?.division || emp?.department || 'N/A'} · Ciclo ${ev.year}`}
+                              className="text-[10px] text-slate-500 mt-0.5 truncate block"
+                            />
+                          </div>
+                          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase shrink-0 ${badgeColor}`}>
+                            {ev.status}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between text-[11px] pt-1 border-t border-slate-200/50 w-full">
+                          <div>
+                            Nivel: <strong className="text-slate-700">{careerLevels.find(l => l.id === ev.currentLevelId)?.levelCode}</strong>
+                            <span className="text-slate-300 mx-1">→</span>
+                            Objetivo: <strong className="text-indigo-600">{careerLevels.find(l => l.id === ev.targetLevelId)?.levelCode}</strong>
+                          </div>
+                          <div className="font-bold text-indigo-700 font-mono tabular-nums">
+                            Score: {ev.finalScore}/5
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </div>
 
           {/* Card: Colaboradores sin Evaluación Activa */}
-          <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-4">
-            <h3 className="text-sm font-bold text-slate-900 mb-3 flex items-center gap-2">
-              <Users className="h-4 w-4 text-indigo-600" />
-              Colaboradores sin Evaluación Anual ({employees.filter(emp => !evaluations.some(ev => ev.employeeId === emp.employeeId)).length})
-            </h3>
-            <p className="text-xs text-slate-500 mb-3">
-              Estos colaboradores están registrados en la plantilla pero no tienen abierto un expediente para el ciclo actual. Haz clic en "Iniciar" para abrir su proceso.
-            </p>
-            {employees.filter(emp => !evaluations.some(ev => ev.employeeId === emp.employeeId)).length === 0 ? (
-              <p className="text-xs text-slate-400 italic bg-slate-50 p-3 rounded-lg border border-slate-150">
-                Todos los colaboradores tienen un proceso de evaluación abierto.
-              </p>
-            ) : (
-              <div className="space-y-2 max-h-[250px] overflow-y-auto">
-                {employees
-                  .filter(emp => !evaluations.some(ev => ev.employeeId === emp.employeeId))
-                  .map((emp) => (
-                    <div key={emp.employeeId} className="flex justify-between items-center gap-2 p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1 min-w-0">
-                          <span className="text-[10px] font-mono bg-slate-200 text-slate-700 px-1 py-0.5 rounded font-bold shrink-0">
-                            {emp.employeeId}
-                          </span>
+          {(() => {
+            const allUnassigned = employees.filter(emp => !evaluations.some(ev => ev.employeeId === emp.employeeId));
+            const filteredUnassigned = allUnassigned.filter(emp =>
+              unassignedDivisionFilter === 'ALL' || getEmployeeDivision(emp) === unassignedDivisionFilter
+            );
+
+            return (
+              <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                  <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                    <Users className="h-4 w-4 text-indigo-600 shrink-0" />
+                    Colaboradores sin Evaluación Anual ({filteredUnassigned.length})
+                  </h3>
+                  <div className="flex items-center gap-1.5">
+                    <Filter className="h-3.5 w-3.5 text-slate-400 shrink-0" aria-hidden="true" />
+                    <select
+                      aria-label="Filtrar colaboradores sin evaluación por división"
+                      value={unassignedDivisionFilter}
+                      onChange={e => setUnassignedDivisionFilter(e.target.value)}
+                      className="text-xs bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-slate-700 font-medium focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 max-w-[190px]"
+                    >
+                      <option value="ALL">Todas las divisiones</option>
+                      {availableDivisions.map(div => (
+                        <option key={div} value={div}>
+                          {div}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <p className="text-xs text-slate-500 mb-3">
+                  Estos colaboradores están registrados en la plantilla pero no tienen abierto un expediente para el ciclo actual. Haz clic en "Iniciar" para abrir su proceso.
+                </p>
+                {filteredUnassigned.length === 0 ? (
+                  <p className="text-xs text-slate-400 italic bg-slate-50 p-3 rounded-lg border border-slate-200">
+                    {allUnassigned.length === 0
+                      ? 'Todos los colaboradores tienen un proceso de evaluación abierto.'
+                      : 'No hay colaboradores sin evaluación en la división seleccionada.'}
+                  </p>
+                ) : (
+                  <div className="space-y-2 max-h-[250px] overflow-y-auto">
+                    {filteredUnassigned.map((emp) => (
+                      <div key={emp.employeeId} className="flex justify-between items-center gap-2 p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1 min-w-0">
+                            <span className="text-[10px] font-mono bg-slate-200 text-slate-700 px-1 py-0.5 rounded font-bold shrink-0">
+                              {emp.employeeId}
+                            </span>
+                            <TruncatedTooltip
+                              text={`${emp.name} ${emp.surname}`}
+                              className="font-bold text-slate-900 truncate block min-w-0"
+                            />
+                          </div>
                           <TruncatedTooltip
-                            text={`${emp.name} ${emp.surname}`}
-                            className="font-bold text-slate-900 truncate block min-w-0"
+                            text={`${emp.division || emp.department} · ${careerPaths.find(p => p.id === emp.currentCareerPathId)?.name || 'Especialista'} | ${careerLevels.find(l => l.id === emp.currentLevelId)?.levelCode || ''}`}
+                            className="text-[10px] text-slate-500 truncate block"
                           />
                         </div>
-                        <TruncatedTooltip
-                          text={`${careerPaths.find(p => p.id === emp.currentCareerPathId)?.name || 'Especialista'} | ${careerLevels.find(l => l.id === emp.currentLevelId)?.levelCode || ''}`}
-                          className="text-[10px] text-slate-500 truncate block"
-                        />
+                        <button
+                          onClick={() => handleCreateEvaluation(emp.employeeId)}
+                          className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-[10px] px-2.5 py-1 rounded transition flex items-center gap-0.5 shrink-0"
+                        >
+                          <Plus className="h-3 w-3" /> Iniciar
+                        </button>
                       </div>
-                      <button
-                        onClick={() => handleCreateEvaluation(emp.employeeId)}
-                        className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-[10px] px-2.5 py-1 rounded transition flex items-center gap-0.5 shrink-0"
-                      >
-                        <Plus className="h-3 w-3" /> Iniciar
-                      </button>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
+            );
+          })()}
+
+          {/* Card: Presupuesto de Subidas por División (Solo RRHH) */}
+          {isHR && (
+            <DivisionBudgetSection
+              budgets={divisionBudgets}
+              divisionsHint={Array.from(new Set(employees.map(e => e.division || e.department).filter(Boolean)))}
+              employees={employees}
+              evaluations={evaluations}
+              careerLevels={careerLevels}
+              onBudgetsUpdated={(next) => {
+                if (onDivisionBudgetsChange) {
+                  onDivisionBudgetsChange(next);
+                } else {
+                  onDataRefresh();
+                }
+              }}
+            />
+          )}
         </div>
 
         {/* Right Column: Deep Score Evaluation Report Card */}
@@ -424,6 +549,8 @@ export default function PerformanceModule({
                       {employees.find(e => e.employeeId === selectedEval.employeeId)?.name} {employees.find(e => e.employeeId === selectedEval.employeeId)?.surname}
                     </h3>
                     <p className="text-xs text-slate-500">
+                      División: <span className="font-semibold text-slate-700">{(() => { const emp = employees.find(e => e.employeeId === selectedEval.employeeId); return emp?.division || emp?.department || 'Sin asignar'; })()}</span>
+                      <span aria-hidden="true" className="mx-1.5">·</span>
                       Fase Actual del Proceso: <span className="text-indigo-700 font-semibold">{selectedEval.status}</span>
                     </p>
                   </div>
@@ -797,7 +924,7 @@ export default function PerformanceModule({
 
                       {/* Card 2: Promoción */}
                       <div className={`p-3 rounded-lg border text-xs space-y-1.5 ${
-                        isReadyForPromotion ? 'bg-indigo-50/50 border-indigo-150 animate-bounce' : 'bg-slate-50 border-slate-200'
+                        isReadyForPromotion ? 'bg-indigo-50 border-indigo-200 animate-bounce-card shadow-xs' : 'bg-slate-50 border-slate-200'
                       }`}>
                         <span className="font-bold uppercase text-[9px] text-slate-500 block">2. Aptitud para Promoción</span>
                         <div className={`text-xs font-extrabold ${isReadyForPromotion ? 'text-indigo-700' : 'text-slate-600'}`}>
@@ -928,6 +1055,80 @@ export default function PerformanceModule({
                   </div>
                 )}
               </div>
+
+              {/* Recomendación de Subida Salarial (antes de los comentarios) */}
+              {isManager && (() => {
+                const selectedEmp = employees.find(e => e.employeeId === selectedEval.employeeId);
+                if (!selectedEmp) return null;
+
+                const rec = computeDivisionSalaryRecommendation(
+                  selectedEmp,
+                  employees,
+                  evaluations,
+                  divisionBudgets,
+                  selectedEval
+                );
+                const selectedItem = rec.items.find(i => i.employee.employeeId === selectedEmp.employeeId);
+
+                return (
+                  <div className="border-t-2 border-slate-200 pt-5 space-y-3">
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                        <TrendingUp className="h-4 w-4 text-emerald-600 shrink-0" />
+                        Recomendación de Subida Salarial — {rec.division}
+                      </h4>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        Reparto ponderado por nota final y promoción en incrementos de {SALARY_RAISE_STEP_EUR} € (subida garantizada en promociones)
+                      </p>
+                    </div>
+
+                    {!rec.isDivisionClosed ? (
+                      <div className="bg-amber-50 border border-amber-200 rounded-xl p-3.5 text-xs text-amber-900 space-y-2">
+                        <div className="font-semibold flex items-center justify-between gap-2">
+                          <span>Pendiente de cierre completo de la división ({rec.closedCount}/{rec.totalEmployees} cerradas)</span>
+                        </div>
+                        <p className="text-[11px] text-amber-800 leading-relaxed">
+                          Para calcular la subida recomendada en <strong>{rec.division}</strong>, todos sus colaboradores deben tener la evaluación anual en estado <strong>Closed</strong>.
+                        </p>
+                        {rec.pendingEmployees.length > 0 && (
+                          <div className="text-[11px] text-amber-900 pt-1 border-t border-amber-200/70 space-y-0.5">
+                            {rec.pendingEmployees.map(p => (
+                              <div key={p.employeeId} className="flex items-center justify-between gap-2">
+                                <span className="font-medium">{p.fullName} ({p.employeeId})</span>
+                                <span className="text-amber-700 font-mono text-[10px]">{p.statusLabel}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ) : rec.budgetEur === null || rec.budgetEur < SALARY_RAISE_STEP_EUR ? (
+                      <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 text-xs text-slate-600">
+                        Todas las evaluaciones de <strong>{rec.division}</strong> están cerradas, pero no hay un presupuesto configurado (mínimo {SALARY_RAISE_STEP_EUR} €) para calcular la recomendación.
+                      </div>
+                    ) : selectedItem ? (
+                      <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider block">
+                            Subida Recomendada para {selectedEmp.name} {selectedEmp.surname}
+                          </span>
+                          <p className="text-xs text-emerald-900 mt-0.5">
+                            {selectedItem.rationale} · Nota <span className="font-mono font-bold">{selectedItem.finalScore.toFixed(2)}/5</span>
+                            {selectedItem.isPromoted ? ' · Con promoción' : ''}
+                          </p>
+                        </div>
+                        <div className="text-right font-mono tabular-nums">
+                          <span className="text-lg font-extrabold text-emerald-700 block leading-tight">
+                            {formatWholeEur(selectedItem.recommendedRaiseEur)}
+                          </span>
+                          <span className="text-[10px] text-emerald-700/80 font-semibold">
+                            {selectedItem.sharePercent.toFixed(1)}% del reparto · {formatEvalResultLabel(selectedItem.evaluationResult)}
+                          </span>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })()}
 
               {/* Status Update & Calibration Comments (Sync between Manager and HR) */}
               <div className="border-t-2 border-slate-200 pt-5 space-y-4">

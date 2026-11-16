@@ -65,7 +65,9 @@ export default function EmployeeCVPanel({
                 {employee.office}, {employee.country}
               </span>
               <span aria-hidden="true">·</span>
-              <span>{employee.department}</span>
+              <span>
+                División: <strong className="font-semibold text-slate-700">{employee.division || employee.department}</strong>
+              </span>
               <span aria-hidden="true">·</span>
               <span className="inline-flex items-center gap-1">
                 <Mail className="h-3.5 w-3.5 text-slate-400" />
