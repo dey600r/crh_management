@@ -85,6 +85,7 @@ export interface Employee {
   country: string;
   office: string;
   department: string;
+  division?: string;
   managerId: string; // supervisor
   careerManagerId: string; // career advisor
   currentCareerPathId: string;
@@ -95,6 +96,9 @@ export interface Employee {
   skills: EmployeeSkill[];
   certifications: EmployeeCertification[];
   projectHistory: { projectId: string; role: string; performance: number }[];
+  bio?: string;
+  education?: string[];
+  languages?: string[];
 }
 
 export interface Project {
@@ -283,6 +287,13 @@ export interface ChatMessage {
   role: 'user' | 'model';
   text: string;
   timestamp: string;
+}
+
+export interface DivisionBudget {
+  id: string;
+  division: string;
+  raiseBudgetEur: number;
+  updatedAt: string;
 }
 
 export type UserRole = 'RRHH' | 'ProjectManager' | 'Colaborador';
@@ -544,4 +555,16 @@ export const stageToScore = (stage: CompetencyStage): number => {
   }
 };
 
+export const getLevelTargetScore = (levelId: string): number => {
+  switch (levelId) {
+    case 'L1': return 2.0;
+    case 'L2': return 3.0;
+    case 'L3': return 3.5;
+    case 'L4': return 4.0;
+    case 'L5': return 4.5;
+    case 'L6':
+    case 'L7': return 5.0;
+    default: return 3.0;
+  }
+};
 
