@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Plus, Users, Briefcase, Zap, HelpCircle, CheckCircle2, AlertCircle, ChevronRight, Sparkles, ShieldAlert 
+  Plus, Users, Briefcase, Zap, HelpCircle, CheckCircle2, AlertCircle, ChevronRight, Sparkles, ShieldAlert, FileText 
 } from 'lucide-react';
 import { Project, ProjectRoleRequest, Employee, UserRole } from '../types';
 import { MarkdownView } from './MarkdownView';
+import EmployeeCVPanel from './EmployeeCVPanel';
 
 interface StaffingModuleProps {
   userRole: UserRole;
@@ -33,6 +34,7 @@ export default function StaffingModule({
   const [explainingId, setExplainingId] = useState<string | null>(null);
   const [aiExplanation, setAiExplanation] = useState<string | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [cvEmployee, setCvEmployee] = useState<Employee | null>(null);
 
   // Forms states
   const [showAddProject, setShowAddProject] = useState(false);
@@ -813,6 +815,16 @@ export default function StaffingModule({
                         ))}
                       </div>
                     )}
+                    <div className="mt-2.5 pt-2 border-t border-slate-100 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => setCvEmployee(emp)}
+                        className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 transition-colors whitespace-nowrap shrink-0"
+                      >
+                        <FileText className="h-3 w-3" />
+                        Ver Ficha CV
+                      </button>
+                    </div>
                   </div>
                 );
               })}
@@ -976,6 +988,30 @@ export default function StaffingModule({
           </div>
         </div>
       </div>
+
+      {/* Modal Ficha CV del Colaborador */}
+      {cvEmployee && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Ficha CV de ${cvEmployee.name} ${cvEmployee.surname}`}
+          className="fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4"
+          onClick={() => setCvEmployee(null)}
+        >
+          <div
+            className="w-full max-w-3xl max-h-[85vh] overflow-y-auto rounded-xl shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <EmployeeCVPanel
+              employee={cvEmployee}
+              careerPaths={careerPaths}
+              careerLevels={careerLevels}
+              projects={projects}
+              onClose={() => setCvEmployee(null)}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

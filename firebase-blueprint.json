@@ -1,5 +1,78 @@
 {
   "entities": {
+    "CareerFamily": {
+      "title": "CareerFamily",
+      "description": "Familia de carreras IT Consulting",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "code": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "active": { "type": "boolean" }
+      },
+      "required": ["id", "code", "name", "active"]
+    },
+    "CareerPath": {
+      "title": "CareerPath",
+      "description": "Especialidad o itinerario de carrera",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "careerFamilyId": { "type": "string" },
+        "code": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "finality": { "type": "string" },
+        "toEvaluate": { "type": "string" }
+      },
+      "required": ["id", "careerFamilyId", "code", "name"]
+    },
+    "CareerLevel": {
+      "title": "CareerLevel",
+      "description": "Nivel corporativo SSTD",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "levelCode": { "type": "string" },
+        "levelNumber": { "type": "number" },
+        "name": { "type": "string" },
+        "experienceFrom": { "type": "number" },
+        "experienceTo": { "type": "number" },
+        "mission": { "type": "string" },
+        "evaluationIndicators": { "type": "string" }
+      },
+      "required": ["id", "levelCode", "levelNumber", "name"]
+    },
+    "Competency": {
+      "title": "Competency",
+      "description": "Competencia corporativa y sus etapas A-E",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "code": { "type": "string" },
+        "name": { "type": "string" },
+        "type": { "type": "string" },
+        "description": { "type": "string" },
+        "stages": { "type": "object" }
+      },
+      "required": ["id", "code", "name", "type"]
+    },
+    "TrainingCatalog": {
+      "title": "TrainingCatalog",
+      "description": "Curso del catálogo de formación",
+      "type": "object",
+      "properties": {
+        "trainingId": { "type": "string" },
+        "name": { "type": "string" },
+        "provider": { "type": "string" },
+        "durationHours": { "type": "number" },
+        "level": { "type": "string" },
+        "cost": { "type": "number" },
+        "coveredCompetencies": { "type": "array" }
+      },
+      "required": ["trainingId", "name", "provider"]
+    },
     "Employee": {
       "title": "Employee",
       "description": "Un colaborador de la empresa",
@@ -8,12 +81,24 @@
         "employeeId": { "type": "string" },
         "name": { "type": "string" },
         "surname": { "type": "string" },
+        "email": { "type": "string" },
+        "country": { "type": "string" },
+        "office": { "type": "string" },
+        "department": { "type": "string" },
+        "division": { "type": "string" },
+        "managerId": { "type": "string" },
+        "careerManagerId": { "type": "string" },
         "currentLevelId": { "type": "string" },
         "currentCareerPathId": { "type": "string" },
+        "hireDate": { "type": "string" },
+        "status": { "type": "string" },
         "availabilityPercent": { "type": "number" },
         "skills": { "type": "array" },
         "certifications": { "type": "array" },
-        "projectHistory": { "type": "array" }
+        "projectHistory": { "type": "array" },
+        "bio": { "type": "string" },
+        "education": { "type": "array" },
+        "languages": { "type": "array" }
       },
       "required": ["employeeId", "name", "surname", "currentLevelId", "currentCareerPathId"]
     },
@@ -25,6 +110,7 @@
         "projectId": { "type": "string" },
         "clientName": { "type": "string" },
         "projectName": { "type": "string" },
+        "businessUnit": { "type": "string" },
         "status": { "type": "string" },
         "startDate": { "type": "string" },
         "endDate": { "type": "string" },
@@ -32,9 +118,133 @@
         "technologies": { "type": "array" }
       },
       "required": ["projectId", "projectName", "status"]
+    },
+    "ProjectRoleRequest": {
+      "title": "ProjectRoleRequest",
+      "description": "Solicitud de perfil de staffing para proyecto",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "projectId": { "type": "string" },
+        "careerPathId": { "type": "string" },
+        "requiredLevelId": { "type": "string" },
+        "requiredSkills": { "type": "array" },
+        "startDate": { "type": "string" },
+        "allocation": { "type": "number" },
+        "priority": { "type": "string" }
+      },
+      "required": ["id", "projectId", "careerPathId", "requiredLevelId"]
+    },
+    "ProjectAssignment": {
+      "title": "ProjectAssignment",
+      "description": "Asignación de colaborador a proyecto",
+      "type": "object",
+      "properties": {
+        "assignmentId": { "type": "string" },
+        "employeeId": { "type": "string" },
+        "projectId": { "type": "string" },
+        "role": { "type": "string" },
+        "allocationPercent": { "type": "number" },
+        "startDate": { "type": "string" },
+        "endDate": { "type": "string" }
+      },
+      "required": ["assignmentId", "employeeId", "projectId"]
+    },
+    "CheckpointReview": {
+      "title": "CheckpointReview",
+      "description": "Checkpoint continuo de desempeño en proyecto",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "employeeId": { "type": "string" },
+        "projectId": { "type": "string" },
+        "reviewerId": { "type": "string" },
+        "reviewDate": { "type": "string" },
+        "reviewType": { "type": "string" },
+        "comments": { "type": "string" },
+        "scores": { "type": "array" },
+        "kpis": { "type": "array" }
+      },
+      "required": ["id", "employeeId", "projectId", "reviewerId"]
+    },
+    "DevelopmentPlan": {
+      "title": "DevelopmentPlan",
+      "description": "Plan de desarrollo individual anual",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "employeeId": { "type": "string" },
+        "year": { "type": "number" },
+        "status": { "type": "string" },
+        "actions": { "type": "array" }
+      },
+      "required": ["id", "employeeId", "year", "status"]
+    },
+    "AnnualEvaluation": {
+      "title": "AnnualEvaluation",
+      "description": "Evaluación anual de desempeño y calibración",
+      "type": "object",
+      "properties": {
+        "evaluationId": { "type": "string" },
+        "employeeId": { "type": "string" },
+        "year": { "type": "number" },
+        "currentLevelId": { "type": "string" },
+        "targetLevelId": { "type": "string" },
+        "status": { "type": "string" },
+        "finalScore": { "type": "number" },
+        "evaluationResult": { "type": "string" },
+        "dimensions": { "type": "array" },
+        "competencies": { "type": "array" },
+        "commentsManager": { "type": "string" },
+        "commentsHR": { "type": "string" },
+        "promotionRecommendation": { "type": "object" }
+      },
+      "required": ["evaluationId", "employeeId", "year", "status"]
+    },
+    "DivisionBudget": {
+      "title": "DivisionBudget",
+      "description": "Presupuesto anual de subidas salariales por división",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "division": { "type": "string" },
+        "raiseBudgetEur": { "type": "number" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "division", "raiseBudgetEur", "updatedAt"]
+    },
+    "SystemMeta": {
+      "title": "SystemMeta",
+      "description": "Metadatos internos de inicialización",
+      "type": "object",
+      "properties": {
+        "seeded": { "type": "boolean" },
+        "seededAt": { "type": "string" }
+      },
+      "required": ["seeded"]
     }
   },
   "firestore": {
+    "careerFamilies": {
+      "schema": "CareerFamily",
+      "description": "Colección de familias de carrera"
+    },
+    "careerPaths": {
+      "schema": "CareerPath",
+      "description": "Colección de especialidades de carrera"
+    },
+    "careerLevels": {
+      "schema": "CareerLevel",
+      "description": "Colección de niveles corporativos"
+    },
+    "competencies": {
+      "schema": "Competency",
+      "description": "Colección de competencias y etapas"
+    },
+    "trainings": {
+      "schema": "TrainingCatalog",
+      "description": "Catálogo corporativo de formaciones"
+    },
     "employees": {
       "schema": "Employee",
       "description": "Colección de colaboradores"
@@ -42,6 +252,34 @@
     "projects": {
       "schema": "Project",
       "description": "Colección de proyectos"
+    },
+    "roleRequests": {
+      "schema": "ProjectRoleRequest",
+      "description": "Solicitudes de perfiles de staffing"
+    },
+    "assignments": {
+      "schema": "ProjectAssignment",
+      "description": "Asignaciones de colaboradores a proyectos"
+    },
+    "checkpoints": {
+      "schema": "CheckpointReview",
+      "description": "Checkpoints continuos en proyecto"
+    },
+    "devPlans": {
+      "schema": "DevelopmentPlan",
+      "description": "Planes de desarrollo individuales"
+    },
+    "annualEvaluations": {
+      "schema": "AnnualEvaluation",
+      "description": "Evaluaciones anuales y calibración"
+    },
+    "divisionBudgets": {
+      "schema": "DivisionBudget",
+      "description": "Colección de presupuestos anuales de subidas por división"
+    },
+    "systemMeta": {
+      "schema": "SystemMeta",
+      "description": "Metadatos de semilla inicial"
     }
   }
 }

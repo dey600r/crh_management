@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  BookOpen, Target, Calendar, Award, Plus, Sparkles, CheckCircle, HelpCircle, ChevronLeft, ChevronRight, User, GraduationCap, ClipboardCheck
+  BookOpen, Target, Calendar, Award, Plus, Sparkles, CheckCircle, HelpCircle, ChevronLeft, ChevronRight, User, GraduationCap, ClipboardCheck, FileText, TrendingUp
 } from 'lucide-react';
-import { Employee, TrainingCatalog, DevelopmentPlan, CheckpointReview, UserRole, CompetencyStage, getRequiredStage, scoreToStage, stageToScore } from '../types';
+import { Employee, Project, TrainingCatalog, DevelopmentPlan, CheckpointReview, UserRole, CompetencyStage, getRequiredStage, scoreToStage, stageToScore } from '../types';
 import { MarkdownView } from './MarkdownView';
+import EmployeeCVPanel from './EmployeeCVPanel';
 
 interface LearningModuleProps {
   userRole: UserRole;
   employees: Employee[];
+  projects?: Project[];
   trainings: TrainingCatalog[];
   devPlans: DevelopmentPlan[];
   checkpoints: CheckpointReview[];
@@ -20,6 +22,7 @@ interface LearningModuleProps {
 export default function LearningModule({
   userRole,
   employees,
+  projects = [],
   trainings,
   devPlans,
   checkpoints,
@@ -66,6 +69,7 @@ export default function LearningModule({
   const [editingCheckpointId, setEditingCheckpointId] = useState<string | null>(null);
   const [editingCheckpoint, setEditingCheckpoint] = useState<CheckpointReview | null>(null);
   const [isCareerGuideExpanded, setIsCareerGuideExpanded] = useState(false);
+  const [showCVPanel, setShowCVPanel] = useState(true);
 
   const handleSaveEditedCheckpoint = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -439,25 +443,28 @@ export default function LearningModule({
               Visualiza su plan de desarrollo, diagnostica brechas de promoción y haz seguimiento en el proyecto.
             </p>
 
-            <div className="space-y-2 max-h-[250px] overflow-y-auto">
+            <div className="space-y-2 max-h-[258px] overflow-y-auto p-1 -m-1">
               {employees.map((emp) => {
                 const isSelected = selectedEmpId === emp.employeeId;
                 return (
                   <button
                     key={emp.employeeId}
                     id={`emp-select-${emp.employeeId}`}
+                    type="button"
                     onClick={() => setSelectedEmpId(emp.employeeId)}
-                    className={`w-full text-left p-2.5 rounded-lg border text-xs transition flex items-center justify-between ${
-                      isSelected ? 'bg-indigo-50 border-indigo-200 ring-1 ring-indigo-500' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
+                    className={`w-full text-left p-2.5 rounded-lg border text-xs transition flex items-center justify-between gap-2 ${
+                      isSelected
+                        ? 'bg-indigo-50 border-indigo-500 ring-2 ring-indigo-500/35 shadow-xs'
+                        : 'bg-slate-50 border-slate-200 hover:bg-slate-100 hover:border-slate-300'
                     }`}
                   >
-                    <div>
-                      <div className="font-bold text-slate-900">{emp.name} {emp.surname}</div>
-                      <div className="text-[10px] text-slate-500 mt-0.5">
+                    <div className="min-w-0">
+                      <div className="font-bold text-slate-900 truncate">{emp.name} {emp.surname}</div>
+                      <div className="text-[10px] text-slate-500 mt-0.5 truncate">
                         {careerPaths.find(p => p.id === emp.currentCareerPathId)?.name}
                       </div>
                     </div>
-                    <span className="text-[10px] font-mono bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded font-bold">
+                    <span className="text-[10px] font-mono bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded font-bold shrink-0">
                       {emp.currentLevelId}
                     </span>
                   </button>
@@ -585,8 +592,35 @@ export default function LearningModule({
           </div>
         </div>
 
-        {/* Right Hand: AI UpSkilling Diagnostic & Checkpoints Feed */}
+        {/* Right Hand: Employee CV, AI UpSkilling Diagnostic & Checkpoints Feed */}
         <div className="lg:col-span-8 space-y-6">
+          {/* Ficha CV del Colaborador */}
+          {selectedEmployee && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between px-1">
+                <span className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+                  <FileText className="h-4 w-4 text-indigo-600" />
+                  Currículum y Perfil Técnico
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowCVPanel(!showCVPanel)}
+                  className="text-xs font-medium text-indigo-600 hover:text-indigo-800 transition-colors whitespace-nowrap shrink-0"
+                >
+                  {showCVPanel ? 'Ocultar Ficha CV' : 'Mostrar Ficha CV'}
+                </button>
+              </div>
+              {showCVPanel && (
+                <EmployeeCVPanel
+                  employee={selectedEmployee}
+                  careerPaths={careerPaths}
+                  careerLevels={careerLevels}
+                  projects={projects}
+                />
+              )}
+            </div>
+          )}
+
           {/* AI Gap Analysis Panel */}
           <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-4">
             <div className="border-b border-slate-100 pb-3 mb-4">
@@ -602,6 +636,8 @@ export default function LearningModule({
                 <div className="bg-slate-50 border border-slate-150 rounded-lg p-3 flex flex-wrap items-center justify-between gap-3 text-xs">
                   <div>
                     Colaborador: <strong className="text-slate-950">{selectedEmployee.name} {selectedEmployee.surname}</strong>
+                    <span className="text-slate-400 mx-1">|</span>
+                    División: <strong className="text-slate-800">{selectedEmployee.division || selectedEmployee.department}</strong>
                     <span className="text-slate-400 mx-1">|</span>
                     Nivel Actual: <span className="bg-slate-200 font-mono text-slate-700 px-1 rounded text-[10px] font-bold">{selectedEmployee.currentLevelId}</span>
                   </div>
@@ -742,9 +778,17 @@ export default function LearningModule({
                           onChange={e => setNewCheckpoint({...newCheckpoint, projectId: e.target.value})}
                           className="w-full text-xs border border-slate-300 rounded p-1 bg-white font-medium"
                         >
-                          <option value="PRJ001">Banco Santander Cloud</option>
-                          <option value="PRJ002">Mercadona E-Commerce</option>
-                          <option value="PRJ003">Telefónica IoT Analytics</option>
+                          {projects.length > 0 ? (
+                            projects.map(p => (
+                              <option key={p.projectId} value={p.projectId}>{p.clientName} — {p.projectName}</option>
+                            ))
+                          ) : (
+                            <>
+                              <option value="PRJ001">Banco Santander Cloud</option>
+                              <option value="PRJ002">Mercadona E-Commerce</option>
+                              <option value="PRJ003">Telefónica IoT Analytics</option>
+                            </>
+                          )}
                         </select>
                       </div>
                       <div>
@@ -885,7 +929,10 @@ export default function LearningModule({
 
             <div className="space-y-4">
               {(() => {
-                const filtered = checkpoints.filter(cp => cp.employeeId === selectedEmpId);
+                const filtered = checkpoints
+                  .filter(cp => cp.employeeId === selectedEmpId)
+                  .sort((a, b) => new Date(a.reviewDate).getTime() - new Date(b.reviewDate).getTime());
+
                 if (filtered.length === 0) {
                   return (
                     <div className="text-center p-8 bg-slate-50 border border-slate-200/60 rounded-xl text-slate-500">
@@ -895,7 +942,66 @@ export default function LearningModule({
                     </div>
                   );
                 }
-                return filtered.map((cp) => {
+
+                const progressionPoints = filtered.map((cp) => {
+                  const avgScore = cp.scores.length > 0
+                    ? cp.scores.reduce((acc, s) => acc + s.score, 0) / cp.scores.length
+                    : 0;
+                  const avgKpi = cp.kpis.length > 0
+                    ? cp.kpis.reduce((acc, k) => acc + k.currentValue, 0) / cp.kpis.length
+                    : 0;
+                  return {
+                    id: cp.id,
+                    date: cp.reviewDate,
+                    avgScore,
+                    avgKpi,
+                    stage: scoreToStage(avgScore)
+                  };
+                });
+
+                const firstPt = progressionPoints[0];
+                const lastPt = progressionPoints[progressionPoints.length - 1];
+                const scoreDelta = lastPt && firstPt ? lastPt.avgScore - firstPt.avgScore : 0;
+
+                return (
+                  <>
+                    {filtered.length >= 2 && (
+                      <div className="border border-slate-200 rounded-lg p-3.5 bg-slate-50/70 space-y-2.5">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="text-xs font-semibold text-slate-900 flex items-center gap-1.5">
+                            <TrendingUp className="h-4 w-4 text-emerald-600" />
+                            Progresión Anual en Checkpoints
+                          </span>
+                          <span className={`text-xs font-mono tabular-nums font-semibold ${
+                            scoreDelta >= 0 ? 'text-emerald-700' : 'text-rose-700'
+                          }`}>
+                            {scoreDelta >= 0 ? `+${scoreDelta.toFixed(2)}` : scoreDelta.toFixed(2)} pts ({firstPt.avgScore.toFixed(1)} → {lastPt.avgScore.toFixed(1)})
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                          {progressionPoints.map((pt, idx) => (
+                            <div key={pt.id} className="bg-white border border-slate-200 rounded-md px-2.5 py-2 space-y-0.5">
+                              <div className="text-[11px] text-slate-500 font-mono tabular-nums">
+                                #{idx + 1} · {pt.date}
+                              </div>
+                              <div className="flex items-baseline justify-between">
+                                <span className="text-xs font-bold font-mono tabular-nums text-slate-900">
+                                  {pt.avgScore.toFixed(2)}/5
+                                </span>
+                                <span className="text-[11px] font-semibold text-indigo-700">
+                                  Etapa {pt.stage.toLowerCase()}
+                                </span>
+                              </div>
+                              <div className="text-[10px] text-slate-400 font-mono tabular-nums">
+                                KPI med: {pt.avgKpi.toFixed(1)}/5
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {filtered.map((cp) => {
                   const emp = employees.find(e => e.employeeId === cp.employeeId);
                   const isEditing = editingCheckpointId === cp.id && editingCheckpoint;
                   
@@ -951,9 +1057,17 @@ export default function LearningModule({
                                 onChange={e => setEditingCheckpoint({...editingCheckpoint, projectId: e.target.value})}
                                 className="w-full text-xs border border-slate-300 rounded p-1 bg-white font-medium"
                               >
-                                <option value="PRJ001">Banco Santander Cloud</option>
-                                <option value="PRJ002">Mercadona E-Commerce</option>
-                                <option value="PRJ003">Telefónica IoT Analytics</option>
+                                {projects.length > 0 ? (
+                                  projects.map(p => (
+                                    <option key={p.projectId} value={p.projectId}>{p.clientName} — {p.projectName}</option>
+                                  ))
+                                ) : (
+                                  <>
+                                    <option value="PRJ001">Banco Santander Cloud</option>
+                                    <option value="PRJ002">Mercadona E-Commerce</option>
+                                    <option value="PRJ003">Telefónica IoT Analytics</option>
+                                  </>
+                                )}
                               </select>
                             </div>
                             <div>
@@ -1198,7 +1312,9 @@ export default function LearningModule({
                       </div>
                     </div>
                   );
-                });
+                })}
+                  </>
+                );
               })()}
             </div>
           </div>

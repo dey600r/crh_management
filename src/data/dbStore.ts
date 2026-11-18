@@ -10,12 +10,57 @@ import {
   TrainingCatalog,
   CheckpointReview,
   AnnualEvaluation,
-  DevelopmentPlan
+  DevelopmentPlan,
+  DivisionBudget
 } from '../types';
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getFirestore, collection, getDocs, doc, getDoc, setDoc, updateDoc, query, limit } from 'firebase/firestore';
+import { getFirestore, collection, getDocs, doc, getDoc, getDocFromServer, setDoc, updateDoc, deleteDoc, query, limit } from 'firebase/firestore';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
+
+export enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+export interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string | null;
+    email?: string | null;
+    emailVerified?: boolean | null;
+    isAnonymous?: boolean | null;
+    tenantId?: string | null;
+    providerInfo?: {
+      providerId?: string | null;
+      email?: string | null;
+    }[];
+  };
+}
+
+function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null): never {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: null,
+      email: null,
+      emailVerified: null,
+      isAnonymous: null,
+      tenantId: null,
+      providerInfo: []
+    },
+    operationType,
+    path
+  };
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
 
 // Firebase Firestore dynamic configuration
 const configPath = join(process.cwd(), 'firebase-applet-config.json');
@@ -40,6 +85,17 @@ if (existsSync(configPath)) {
     console.log('[Firestore] Successfully initialized connection to database:', config.firestoreDatabaseId || '(default)');
   } catch (error) {
     console.error('[Firestore] Failed to initialize Firebase in dbStore:', error);
+  }
+}
+
+async function testConnection() {
+  if (!db) return;
+  try {
+    await getDocFromServer(doc(db, 'test', 'connection'));
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('the client is offline')) {
+      console.error('Please check your Firebase configuration.');
+    }
   }
 }
 
@@ -471,6 +527,7 @@ export const INITIAL_EMPLOYEES: Employee[] = [
     country: 'España',
     office: 'Madrid',
     department: 'Software Engineering',
+    division: 'Software Engineering',
     managerId: 'E004',
     careerManagerId: 'E004',
     currentCareerPathId: 'P_SWE',
@@ -500,6 +557,7 @@ export const INITIAL_EMPLOYEES: Employee[] = [
     country: 'España',
     office: 'Barcelona',
     department: 'Architecture & Tech Leadership',
+    division: 'Architecture & Tech Leadership',
     managerId: 'E006',
     careerManagerId: 'E006',
     currentCareerPathId: 'P_ARC',
@@ -531,6 +589,7 @@ export const INITIAL_EMPLOYEES: Employee[] = [
     country: 'España',
     office: 'Madrid',
     department: 'Software Engineering',
+    division: 'Consulting',
     managerId: 'E001',
     careerManagerId: 'E001',
     currentCareerPathId: 'P_SWE',
@@ -554,6 +613,7 @@ export const INITIAL_EMPLOYEES: Employee[] = [
     country: 'España',
     office: 'Valencia',
     department: 'Project & Product Management',
+    division: 'Project & Product Management',
     managerId: 'E006',
     careerManagerId: 'E006',
     currentCareerPathId: 'P_MGT',
@@ -582,6 +642,7 @@ export const INITIAL_EMPLOYEES: Employee[] = [
     country: 'Colombia',
     office: 'Bogotá',
     department: 'Software Engineering',
+    division: 'Consulting',
     managerId: 'E001',
     careerManagerId: 'E004',
     currentCareerPathId: 'P_SWE',
@@ -607,6 +668,7 @@ export const INITIAL_EMPLOYEES: Employee[] = [
     country: 'España',
     office: 'Madrid',
     department: 'Architecture & Tech Leadership',
+    division: 'Architecture & Tech Leadership',
     managerId: 'HR_ROOT',
     careerManagerId: 'HR_ROOT',
     currentCareerPathId: 'P_ARC',
@@ -624,6 +686,191 @@ export const INITIAL_EMPLOYEES: Employee[] = [
     ],
     projectHistory: [
       { projectId: 'PRJ001', role: 'Principal Director', performance: 4.9 }
+    ]
+  },
+  {
+    employeeId: 'E007',
+    name: 'Samsagaz',
+    surname: 'Gamyi',
+    email: 'samsagaz.gamyi@itconsulting.com',
+    country: 'España',
+    office: 'Madrid',
+    department: 'Software Engineering',
+    division: 'Software Engineering',
+    managerId: 'E004',
+    careerManagerId: 'E004',
+    currentCareerPathId: 'P_SWE',
+    currentLevelId: 'L3', // Senior Engineer (Nivel 2), iniciando año en Etapa A
+    hireDate: '2023-02-01',
+    status: 'Active',
+    availabilityPercent: 50,
+    bio: 'Ingeniero Full-Stack con más de 5 años de experiencia en diseño y desarrollo de aplicaciones web escalables con React, TypeScript, Node.js y arquitectura cloud en AWS. Especializado en modernización de plataformas e-commerce, diseño modular e integración continua. Durante 2026 ha evolucionado de Etapa A hacia la consolidación plena de Nivel 2 (Etapa B/C).',
+    education: [
+      'Grado en Ingeniería Informática — Universidad Politécnica de Madrid (2017–2021)',
+      'Máster en Cloud Computing & Arquitectura Software — UPM (2022)'
+    ],
+    languages: [
+      'Español (Nativo)',
+      'Inglés (C1 Advanced)'
+    ],
+    skills: [
+      { skillId: 's19', name: 'React', category: 'Frontend', level: 5, validatedDate: '2026-10-15', source: 'Project' },
+      { skillId: 's20', name: 'TypeScript', category: 'Languages', level: 5, validatedDate: '2026-10-15', source: 'Project' },
+      { skillId: 's21', name: 'Node.js', category: 'Backend', level: 4, validatedDate: '2026-09-20', source: 'Project' },
+      { skillId: 's22', name: 'AWS', category: 'Cloud', level: 4, validatedDate: '2026-08-12', source: 'Training' },
+      { skillId: 's23', name: 'PostgreSQL', category: 'Databases', level: 4, validatedDate: '2026-06-30', source: 'Project' },
+      { skillId: 's24', name: 'Docker', category: 'DevOps', level: 3, validatedDate: '2026-05-15', source: 'Project' }
+    ],
+    certifications: [
+      { id: 'c7', certificationName: 'AWS Certified Developer - Associate', provider: 'AWS', issueDate: '2025-04-10', expiryDate: '2028-04-10' },
+      { id: 'c8', certificationName: 'Professional Scrum Developer I (PSD I)', provider: 'Scrum.org', issueDate: '2024-09-20', expiryDate: '2030-01-01' }
+    ],
+    projectHistory: [
+      { projectId: 'PRJ003', role: 'Full-Stack React/Node Engineer', performance: 4.1 },
+      { projectId: 'PRJ002', role: 'Senior Full-Stack Engineer', performance: 4.5 }
+    ]
+  },
+  {
+    employeeId: 'E008',
+    name: 'Elena',
+    surname: 'Navarro Prado',
+    email: 'elena.navarro@itconsulting.com',
+    country: 'España',
+    office: 'Madrid',
+    department: 'Data & AI',
+    division: 'Data & AI',
+    managerId: 'E006',
+    careerManagerId: 'E006',
+    currentCareerPathId: 'P_ARC',
+    currentLevelId: 'L4',
+    hireDate: '2020-04-10',
+    status: 'Active',
+    availabilityPercent: 25,
+    bio: 'Arquitecta de Plataformas de Datos e IA Generativa con experiencia liderando equipos multi-squad en banca y telecomunicaciones.',
+    education: [
+      'Máster en Ciencia de Datos e Inteligencia Artificial — Universidad Carlos III (2018)'
+    ],
+    languages: ['Español (Nativo)', 'Inglés (C1)'],
+    skills: [
+      { skillId: 's25', name: 'Python', category: 'Data & AI', level: 5, validatedDate: '2026-09-10', source: 'Project' },
+      { skillId: 's26', name: 'Data Architecture', category: 'Architecture', level: 5, validatedDate: '2026-10-01', source: 'Project' },
+      { skillId: 's27', name: 'AWS', category: 'Cloud', level: 4, validatedDate: '2026-08-20', source: 'Project' }
+    ],
+    certifications: [
+      { id: 'c9', certificationName: 'AWS Certified Machine Learning - Specialty', provider: 'AWS', issueDate: '2025-06-15', expiryDate: '2028-06-15' }
+    ],
+    projectHistory: [
+      { projectId: 'PRJ001', role: 'AI Platform Architect', performance: 4.8 }
+    ]
+  },
+  {
+    employeeId: 'E009',
+    name: 'Hugo',
+    surname: 'Serrano Blanco',
+    email: 'hugo.serrano@itconsulting.com',
+    country: 'España',
+    office: 'Barcelona',
+    department: 'Data & AI',
+    division: 'Data & AI',
+    managerId: 'E008',
+    careerManagerId: 'E008',
+    currentCareerPathId: 'P_SWE',
+    currentLevelId: 'L3',
+    hireDate: '2022-09-01',
+    status: 'Active',
+    availabilityPercent: 40,
+    bio: 'Ingeniero Senior de MLOps y pipelines de datos en tiempo real especializado en Spark, Kubernetes y observabilidad de modelos.',
+    skills: [
+      { skillId: 's28', name: 'Python', category: 'Data & AI', level: 5, validatedDate: '2026-09-12', source: 'Project' },
+      { skillId: 's29', name: 'Kubernetes', category: 'DevOps', level: 4, validatedDate: '2026-09-30', source: 'Project' },
+      { skillId: 's30', name: 'Apache Spark', category: 'Data & AI', level: 4, validatedDate: '2026-07-15', source: 'Project' }
+    ],
+    certifications: [
+      { id: 'c10', certificationName: 'Databricks Certified Data Engineer Professional', provider: 'Databricks', issueDate: '2025-03-10', expiryDate: '2027-03-10' }
+    ],
+    projectHistory: [
+      { projectId: 'PRJ003', role: 'Senior MLOps Engineer', performance: 4.4 }
+    ]
+  },
+  {
+    employeeId: 'E010',
+    name: 'Lucía',
+    surname: 'Campos Herrera',
+    email: 'lucia.campos@itconsulting.com',
+    country: 'España',
+    office: 'Madrid',
+    department: 'Data & AI',
+    division: 'Data & AI',
+    managerId: 'E008',
+    careerManagerId: 'E008',
+    currentCareerPathId: 'P_SWE',
+    currentLevelId: 'L2',
+    hireDate: '2024-02-15',
+    status: 'Active',
+    availabilityPercent: 50,
+    bio: 'Data Engineer enfocada en ETL cloud, calidad del dato y APIs analíticas con Python y PostgreSQL.',
+    skills: [
+      { skillId: 's31', name: 'Python', category: 'Data & AI', level: 4, validatedDate: '2026-08-10', source: 'Project' },
+      { skillId: 's32', name: 'PostgreSQL', category: 'Databases', level: 4, validatedDate: '2026-09-01', source: 'Project' },
+      { skillId: 's33', name: 'TypeScript', category: 'Languages', level: 3, validatedDate: '2026-06-15', source: 'Self' }
+    ],
+    certifications: [],
+    projectHistory: [
+      { projectId: 'PRJ003', role: 'Data Engineer', performance: 3.9 }
+    ]
+  },
+  {
+    employeeId: 'E011',
+    name: 'Marcos',
+    surname: 'Ibáñez León',
+    email: 'marcos.ibanez@itconsulting.com',
+    country: 'España',
+    office: 'Valencia',
+    department: 'Data & AI',
+    division: 'Data & AI',
+    managerId: 'E008',
+    careerManagerId: 'E008',
+    currentCareerPathId: 'P_CON',
+    currentLevelId: 'L1',
+    hireDate: '2025-05-01',
+    status: 'Active',
+    availabilityPercent: 100,
+    bio: 'Analista funcional junior de BI y visualización orientado a definición de KPIs de negocio y gobierno del dato.',
+    skills: [
+      { skillId: 's34', name: 'Power BI', category: 'Data & AI', level: 4, validatedDate: '2026-07-20', source: 'Project' },
+      { skillId: 's35', name: 'SQL', category: 'Databases', level: 3, validatedDate: '2026-08-05', source: 'Self' }
+    ],
+    certifications: [],
+    projectHistory: [
+      { projectId: 'PRJ002', role: 'Junior BI Analyst', performance: 3.3 }
+    ]
+  },
+  {
+    employeeId: 'E012',
+    name: 'Patricia',
+    surname: 'Morales Díez',
+    email: 'patricia.morales@itconsulting.com',
+    country: 'España',
+    office: 'Madrid',
+    department: 'Data & AI',
+    division: 'Data & AI',
+    managerId: 'E006',
+    careerManagerId: 'E006',
+    currentCareerPathId: 'P_MGT',
+    currentLevelId: 'L5',
+    hireDate: '2017-10-01',
+    status: 'Active',
+    availabilityPercent: 20,
+    bio: 'Senior Manager de programas de Analítica Avanzada encargada de coordinación de cuentas y seguimiento de entregas multi-país.',
+    skills: [
+      { skillId: 's36', name: 'Program Management', category: 'Management', level: 4, validatedDate: '2026-05-20', source: 'Project' },
+      { skillId: 's37', name: 'Risk Management', category: 'Management', level: 3, validatedDate: '2026-06-01', source: 'Project' }
+    ],
+    certifications: [
+      { id: 'c11', certificationName: 'Project Management Professional (PMP)', provider: 'PMI', issueDate: '2020-11-10', expiryDate: '2026-11-10' }
+    ],
+    projectHistory: [
+      { projectId: 'PRJ001', role: 'Data Program Manager', performance: 2.7 }
     ]
   }
 ];
@@ -741,6 +988,314 @@ export const INITIAL_CHECKPOINTS: CheckpointReview[] = [
       { id: 'k5', kpi: 'Quality', weight: 30, targetValue: 4, currentValue: 4.7 },
       { id: 'k6', kpi: 'Innovation', weight: 30, targetValue: 4, currentValue: 5.0 }
     ]
+  },
+  {
+    id: 'CK003',
+    employeeId: 'E007',
+    projectId: 'PRJ002',
+    reviewerId: 'E004',
+    reviewDate: '2026-03-15',
+    reviewType: 'Quarterly',
+    comments: 'Q1 — Arranque en Nivel 2 (Etapa A). Samsagaz demuestra buena base técnica en React y TypeScript, aunque requiere mayor autonomía en el desglose de requisitos con cliente y en la coordinación técnica del equipo.',
+    scores: [
+      { competencyId: 'CLIENT_ORIENTATION', score: 2.6, stage: 'A', comments: 'Recoge requerimientos con apoyo del PM; en proceso de ganar proximidad directa.' },
+      { competencyId: 'INNOVATION', score: 2.8, stage: 'A', comments: 'Trabaja con método y calidad, aplicando estándares existentes.' },
+      { competencyId: 'HUMAN_RELATIONS', score: 2.5, stage: 'A', comments: 'Comunicación clara con compañeros directos; margen de mejora ante presión.' },
+      { competencyId: 'ORGANIZATION_RESULTS', score: 2.4, stage: 'A', comments: 'Cumple tareas asignadas, aunque necesita mejorar la estimación de dependencias.' },
+      { competencyId: 'TEAM_LEADERSHIP', score: 2.2, stage: 'A', comments: 'Coopera bien en el equipo pero aún no ejerce mentoría activa.' },
+      { competencyId: 'PROFESSIONAL_OPENNESS', score: 2.7, stage: 'A', comments: 'Actitud receptiva al feedback y actualización técnica continua.' }
+    ],
+    kpis: [
+      { id: 'k7', kpi: 'Quality', weight: 35, targetValue: 4.0, currentValue: 3.2 },
+      { id: 'k8', kpi: 'Delivery', weight: 35, targetValue: 4.0, currentValue: 3.1 },
+      { id: 'k9', kpi: 'Customer Satisfaction', weight: 30, targetValue: 4.0, currentValue: 3.3 }
+    ]
+  },
+  {
+    id: 'CK004',
+    employeeId: 'E007',
+    projectId: 'PRJ002',
+    reviewerId: 'E004',
+    reviewDate: '2026-06-15',
+    reviewType: 'Quarterly',
+    comments: 'Q2 — Progresión sostenida tras completar la formación en React 19 y Next.js. Empieza a proponer mejoras técnicas en los microservicios Node.js y gana seguridad en las demos con Mercadona.',
+    scores: [
+      { competencyId: 'CLIENT_ORIENTATION', score: 3.1, stage: 'B', comments: 'Comprende expectativas funcionales del cliente e integra mejoras en sus entregas.' },
+      { competencyId: 'INNOVATION', score: 3.4, stage: 'B', comments: 'Analiza alternativas de rendimiento y propone caché distribuida en APIs.' },
+      { competencyId: 'HUMAN_RELATIONS', score: 3.0, stage: 'B', comments: 'Gestiona mejor los picos de sprint y facilita acuerdos entre front y back.' },
+      { competencyId: 'ORGANIZATION_RESULTS', score: 3.0, stage: 'B', comments: 'Planifica sus módulos con autonomía y cumple hitos sin desviaciones.' },
+      { competencyId: 'TEAM_LEADERSHIP', score: 2.7, stage: 'A', comments: 'Comienza a hacer code reviews constructivas para perfiles junior.' },
+      { competencyId: 'PROFESSIONAL_OPENNESS', score: 3.2, stage: 'B', comments: 'Comparte aprendizajes de AWS y arquitectura en sesiones internas.' }
+    ],
+    kpis: [
+      { id: 'k10', kpi: 'Quality', weight: 35, targetValue: 4.0, currentValue: 3.7 },
+      { id: 'k11', kpi: 'Delivery', weight: 35, targetValue: 4.0, currentValue: 3.6 },
+      { id: 'k12', kpi: 'Customer Satisfaction', weight: 30, targetValue: 4.0, currentValue: 3.8 }
+    ]
+  },
+  {
+    id: 'CK005',
+    employeeId: 'E007',
+    projectId: 'PRJ002',
+    reviewerId: 'E004',
+    reviewDate: '2026-09-15',
+    reviewType: 'Quarterly',
+    comments: 'Q3 — Consolidación plena de Nivel 2 (Etapa B). Ha liderado la refactorización del checkout con Clean Architecture y DDD, reduciendo la latencia un 35% y acompañando a perfiles L1/L2.',
+    scores: [
+      { competencyId: 'CLIENT_ORIENTATION', score: 3.6, stage: 'B', comments: 'Participa directamente en talleres funcionales anticipando riesgos de UX.' },
+      { competencyId: 'INNOVATION', score: 3.9, stage: 'B', comments: 'Aplica Clean Architecture en Node.js/TypeScript con cobertura de tests >85%.' },
+      { competencyId: 'HUMAN_RELATIONS', score: 3.5, stage: 'B', comments: 'Colaboración fluida con QA, Producto y el equipo técnico de cliente.' },
+      { competencyId: 'ORGANIZATION_RESULTS', score: 3.7, stage: 'B', comments: 'Optimiza prioridades de entrega y desbloquea dependencias críticas del sprint.' },
+      { competencyId: 'TEAM_LEADERSHIP', score: 3.3, stage: 'B', comments: 'Mentoriza activamente a dos desarrolladores junior en buenas prácticas React.' },
+      { competencyId: 'PROFESSIONAL_OPENNESS', score: 3.7, stage: 'B', comments: 'Iniciativa constante para explorar observabilidad y automatización CI/CD.' }
+    ],
+    kpis: [
+      { id: 'k13', kpi: 'Quality', weight: 35, targetValue: 4.0, currentValue: 4.1 },
+      { id: 'k14', kpi: 'Delivery', weight: 35, targetValue: 4.0, currentValue: 4.0 },
+      { id: 'k15', kpi: 'Customer Satisfaction', weight: 30, targetValue: 4.0, currentValue: 4.2 }
+    ]
+  },
+  {
+    id: 'CK006',
+    employeeId: 'E007',
+    projectId: 'PRJ002',
+    reviewerId: 'E004',
+    reviewDate: '2026-11-10',
+    reviewType: 'Quarterly',
+    comments: 'Q4 — Cierre de año sobresaliente. Supera consistentemente las metas del Nivel 2, alcanzando Etapa C en Innovación y Organización. Referente técnico del squad Full-Stack de Mercadona.',
+    scores: [
+      { competencyId: 'CLIENT_ORIENTATION', score: 4.1, stage: 'B', comments: 'Muy valorado por el Product Owner de Mercadona; aporta soluciones proactivas.' },
+      { competencyId: 'INNOVATION', score: 4.5, stage: 'C', comments: 'Diseñó la librería común de componentes y el patrón BFF serverless en AWS.' },
+      { competencyId: 'HUMAN_RELATIONS', score: 4.0, stage: 'B', comments: 'Gran madurez en gestión de conflictos técnicos y alineación de equipo.' },
+      { competencyId: 'ORGANIZATION_RESULTS', score: 4.2, stage: 'C', comments: 'Coordina entregas complejas entre múltiples squads cumpliendo al 100% los SLA.' },
+      { competencyId: 'TEAM_LEADERSHIP', score: 3.8, stage: 'B', comments: 'Dinamiza las ceremonias técnicas y eleva el estándar de calidad del equipo.' },
+      { competencyId: 'PROFESSIONAL_OPENNESS', score: 4.2, stage: 'B', comments: 'Referente en comunidades internas de TypeScript y AWS.' }
+    ],
+    kpis: [
+      { id: 'k16', kpi: 'Quality', weight: 35, targetValue: 4.0, currentValue: 4.5 },
+      { id: 'k17', kpi: 'Delivery', weight: 35, targetValue: 4.0, currentValue: 4.4 },
+      { id: 'k18', kpi: 'Customer Satisfaction', weight: 30, targetValue: 4.0, currentValue: 4.6 }
+    ]
+  },
+  {
+    id: 'CK007',
+    employeeId: 'E008',
+    projectId: 'PRJ001',
+    reviewerId: 'E006',
+    reviewDate: '2026-05-20',
+    reviewType: 'Quarterly',
+    comments: 'Q2 — Elena ha diseñado el blueprint de plataforma IA multi-tenant con excelente adopción en cliente y liderazgo técnico sobre tres squads.',
+    scores: [
+      { competencyId: 'CLIENT_ORIENTATION', score: 4.5, stage: 'C', comments: 'Interlocución directa con dirección de arquitectura del cliente.' },
+      { competencyId: 'INNOVATION', score: 4.7, stage: 'D', comments: 'Introdujo arquitectura RAG evaluable y reutilizable.' },
+      { competencyId: 'HUMAN_RELATIONS', score: 4.1, stage: 'C', comments: 'Genera consenso sólido entre negocio y tecnología.' },
+      { competencyId: 'ORGANIZATION_RESULTS', score: 4.2, stage: 'C', comments: 'Cumplimiento íntegro de hitos de arquitectura.' },
+      { competencyId: 'TEAM_LEADERSHIP', score: 4.3, stage: 'C', comments: 'Mentoría activa a tech leads de Data & AI.' },
+      { competencyId: 'PROFESSIONAL_OPENNESS', score: 4.6, stage: 'D', comments: 'Impulsa la comunidad interna de GenAI.' }
+    ],
+    kpis: [
+      { id: 'k19', kpi: 'Quality', weight: 40, targetValue: 4.5, currentValue: 4.7 },
+      { id: 'k20', kpi: 'Innovation', weight: 30, targetValue: 4.5, currentValue: 4.8 },
+      { id: 'k21', kpi: 'Customer Satisfaction', weight: 30, targetValue: 4.5, currentValue: 4.6 }
+    ]
+  },
+  {
+    id: 'CK008',
+    employeeId: 'E008',
+    projectId: 'PRJ001',
+    reviewerId: 'E006',
+    reviewDate: '2026-10-28',
+    reviewType: 'Quarterly',
+    comments: 'Q4 — Consolidación completa de etapas de Senior Manager (L5) con impacto directo en nuevas cuentas de IA.',
+    scores: [
+      { competencyId: 'CLIENT_ORIENTATION', score: 4.8, stage: 'D', comments: 'Visión estratégica y relación de confianza ejecutiva.' },
+      { competencyId: 'INNOVATION', score: 4.9, stage: 'D', comments: 'Referente corporativo en soluciones IA industrializadas.' },
+      { competencyId: 'HUMAN_RELATIONS', score: 4.4, stage: 'C', comments: 'Excelente gestión de comités complejos.' },
+      { competencyId: 'ORGANIZATION_RESULTS', score: 4.5, stage: 'C', comments: 'Optimiza entrega y márgenes en entornos críticos.' },
+      { competencyId: 'TEAM_LEADERSHIP', score: 4.5, stage: 'C', comments: 'Desarrolla nuevos líderes técnicos en la división.' },
+      { competencyId: 'PROFESSIONAL_OPENNESS', score: 4.8, stage: 'D', comments: 'Vigilancia tecnológica y publicación de activos internos.' }
+    ],
+    kpis: [
+      { id: 'k22', kpi: 'Quality', weight: 40, targetValue: 4.5, currentValue: 4.8 },
+      { id: 'k23', kpi: 'Innovation', weight: 30, targetValue: 4.5, currentValue: 4.9 },
+      { id: 'k24', kpi: 'Customer Satisfaction', weight: 30, targetValue: 4.5, currentValue: 4.8 }
+    ]
+  },
+  {
+    id: 'CK009',
+    employeeId: 'E009',
+    projectId: 'PRJ003',
+    reviewerId: 'E008',
+    reviewDate: '2026-05-18',
+    reviewType: 'Quarterly',
+    comments: 'Q2 — Hugo ha estandarizado el despliegue automatizado de pipelines MLOps reduciendo incidencias en producción.',
+    scores: [
+      { competencyId: 'CLIENT_ORIENTATION', score: 3.9, stage: 'B', comments: 'Anticipa necesidades operativas del equipo de datos.' },
+      { competencyId: 'INNOVATION', score: 4.3, stage: 'C', comments: 'Automatización avanzada de feature store.' },
+      { competencyId: 'HUMAN_RELATIONS', score: 3.8, stage: 'B', comments: 'Buena coordinación transversal con DevOps.' },
+      { competencyId: 'ORGANIZATION_RESULTS', score: 4.1, stage: 'B', comments: 'Entregas previsibles con alta cobertura de pruebas.' },
+      { competencyId: 'TEAM_LEADERSHIP', score: 3.9, stage: 'B', comments: 'Acompaña a perfiles L1/L2 en buenas prácticas.' },
+      { competencyId: 'PROFESSIONAL_OPENNESS', score: 4.2, stage: 'C', comments: 'Lidera charlas técnicas sobre Kubernetes y ML.' }
+    ],
+    kpis: [
+      { id: 'k25', kpi: 'Quality', weight: 35, targetValue: 4.0, currentValue: 4.3 },
+      { id: 'k26', kpi: 'Delivery', weight: 35, targetValue: 4.0, currentValue: 4.2 },
+      { id: 'k27', kpi: 'Productivity', weight: 30, targetValue: 4.0, currentValue: 4.3 }
+    ]
+  },
+  {
+    id: 'CK010',
+    employeeId: 'E009',
+    projectId: 'PRJ003',
+    reviewerId: 'E008',
+    reviewDate: '2026-10-25',
+    reviewType: 'Quarterly',
+    comments: 'Q4 — Cumple íntegramente los criterios SSTD del nivel Manager (L4) tras asumir coordinación técnica de célula.',
+    scores: [
+      { competencyId: 'CLIENT_ORIENTATION', score: 4.1, stage: 'B', comments: 'Excelente interlocución técnica con el cliente.' },
+      { competencyId: 'INNOVATION', score: 4.5, stage: 'C', comments: 'Aplica creatividad técnica en optimización de costes cloud.' },
+      { competencyId: 'HUMAN_RELATIONS', score: 4.0, stage: 'B', comments: 'Resuelve bloqueos técnicos con madurez.' },
+      { competencyId: 'ORGANIZATION_RESULTS', score: 4.3, stage: 'C', comments: 'Coordina múltiples dependencias entre squads.' },
+      { competencyId: 'TEAM_LEADERSHIP', score: 4.1, stage: 'B', comments: 'Motiva y mentoriza eficazmente al equipo.' },
+      { competencyId: 'PROFESSIONAL_OPENNESS', score: 4.4, stage: 'C', comments: 'Comparte estándares en toda la división Data & AI.' }
+    ],
+    kpis: [
+      { id: 'k28', kpi: 'Quality', weight: 35, targetValue: 4.0, currentValue: 4.4 },
+      { id: 'k29', kpi: 'Delivery', weight: 35, targetValue: 4.0, currentValue: 4.3 },
+      { id: 'k30', kpi: 'Productivity', weight: 30, targetValue: 4.0, currentValue: 4.4 }
+    ]
+  },
+  {
+    id: 'CK011',
+    employeeId: 'E010',
+    projectId: 'PRJ003',
+    reviewerId: 'E008',
+    reviewDate: '2026-05-15',
+    reviewType: 'Quarterly',
+    comments: 'Q2 — Lucía ejecuta con fiabilidad los pipelines Python/SQL asignados y muestra gran iniciativa de aprendizaje.',
+    scores: [
+      { competencyId: 'CLIENT_ORIENTATION', score: 3.4, stage: 'A', comments: 'Documenta requisitos con apoyo del tech lead.' },
+      { competencyId: 'INNOVATION', score: 3.8, stage: 'B', comments: 'Mejora scripts de validación automática de esquemas.' },
+      { competencyId: 'HUMAN_RELATIONS', score: 3.6, stage: 'B', comments: 'Colaboración muy fluida con QA y analistas.' },
+      { competencyId: 'ORGANIZATION_RESULTS', score: 3.5, stage: 'A', comments: 'Cumple plazos en tareas acotadas.' },
+      { competencyId: 'TEAM_LEADERSHIP', score: 3.2, stage: 'A', comments: 'Coopera activamente en revisiones de código.' },
+      { competencyId: 'PROFESSIONAL_OPENNESS', score: 3.9, stage: 'B', comments: 'Rápida adopción de herramientas de calidad de datos.' }
+    ],
+    kpis: [
+      { id: 'k31', kpi: 'Quality', weight: 40, targetValue: 3.5, currentValue: 3.8 },
+      { id: 'k32', kpi: 'Delivery', weight: 30, targetValue: 3.5, currentValue: 3.7 },
+      { id: 'k33', kpi: 'Customer Satisfaction', weight: 30, targetValue: 3.5, currentValue: 3.9 }
+    ]
+  },
+  {
+    id: 'CK012',
+    employeeId: 'E010',
+    projectId: 'PRJ003',
+    reviewerId: 'E008',
+    reviewDate: '2026-10-20',
+    reviewType: 'Quarterly',
+    comments: 'Q4 — Sólido rendimiento en Nivel 1 (L2) superando expectativas de calidad; en ruta para L3 cuando consolide autonomía en cliente.',
+    scores: [
+      { competencyId: 'CLIENT_ORIENTATION', score: 3.6, stage: 'A', comments: 'Participa en demos técnicas con buena claridad.' },
+      { competencyId: 'INNOVATION', score: 4.0, stage: 'B', comments: 'Propone refactorizaciones limpias en módulos ETL.' },
+      { competencyId: 'HUMAN_RELATIONS', score: 3.8, stage: 'B', comments: 'Empatía y comunicación constructiva en el squad.' },
+      { competencyId: 'ORGANIZATION_RESULTS', score: 3.7, stage: 'A', comments: 'Mejora en estimación de subtareas.' },
+      { competencyId: 'TEAM_LEADERSHIP', score: 3.5, stage: 'A', comments: 'Apoya la incorporación de analistas junior.' },
+      { competencyId: 'PROFESSIONAL_OPENNESS', score: 4.0, stage: 'B', comments: 'Completado itinerario formativo interno.' }
+    ],
+    kpis: [
+      { id: 'k34', kpi: 'Quality', weight: 40, targetValue: 3.5, currentValue: 4.0 },
+      { id: 'k35', kpi: 'Delivery', weight: 30, targetValue: 3.5, currentValue: 3.8 },
+      { id: 'k36', kpi: 'Customer Satisfaction', weight: 30, targetValue: 3.5, currentValue: 3.9 }
+    ]
+  },
+  {
+    id: 'CK013',
+    employeeId: 'E011',
+    projectId: 'PRJ002',
+    reviewerId: 'E008',
+    reviewDate: '2026-05-12',
+    reviewType: 'Quarterly',
+    comments: 'Q2 — Marcos se adapta adecuadamente a los estándares de visualización y reporting bajo supervisión.',
+    scores: [
+      { competencyId: 'CLIENT_ORIENTATION', score: 3.0, stage: 'A', comments: 'Recoge incidencias de cuadros de mando con apoyo.' },
+      { competencyId: 'INNOVATION', score: 3.1, stage: 'A', comments: 'Sigue plantillas establecidas con rigor.' },
+      { competencyId: 'HUMAN_RELATIONS', score: 3.2, stage: 'A', comments: 'Escucha activa y trato cordial.' },
+      { competencyId: 'ORGANIZATION_RESULTS', score: 3.0, stage: 'A', comments: 'Cumple entregas planificadas.' },
+      { competencyId: 'TEAM_LEADERSHIP', score: 2.9, stage: 'A', comments: 'Colabora en equipo según lo esperado en L1.' },
+      { competencyId: 'PROFESSIONAL_OPENNESS', score: 3.2, stage: 'A', comments: 'Receptivo al feedback continuo.' }
+    ],
+    kpis: [
+      { id: 'k37', kpi: 'Quality', weight: 35, targetValue: 3.0, currentValue: 3.1 },
+      { id: 'k38', kpi: 'Delivery', weight: 35, targetValue: 3.0, currentValue: 3.2 },
+      { id: 'k39', kpi: 'Customer Satisfaction', weight: 30, targetValue: 3.0, currentValue: 3.2 }
+    ]
+  },
+  {
+    id: 'CK014',
+    employeeId: 'E011',
+    projectId: 'PRJ002',
+    reviewerId: 'E008',
+    reviewDate: '2026-10-18',
+    reviewType: 'Quarterly',
+    comments: 'Q4 — Cumple correctamente los objetivos del Nivel 1 prima (L1) con estabilidad y buena actitud de equipo.',
+    scores: [
+      { competencyId: 'CLIENT_ORIENTATION', score: 3.3, stage: 'A', comments: 'Mejora la precisión al documentar KPIs.' },
+      { competencyId: 'INNOVATION', score: 3.2, stage: 'A', comments: 'Aplica buenas prácticas de modelado Power BI.' },
+      { competencyId: 'HUMAN_RELATIONS', score: 3.4, stage: 'A', comments: 'Comunicación fluida con el equipo de desarrollo.' },
+      { competencyId: 'ORGANIZATION_RESULTS', score: 3.2, stage: 'A', comments: 'Cumple fechas comprometidas en sprint.' },
+      { competencyId: 'TEAM_LEADERSHIP', score: 3.1, stage: 'A', comments: 'Comparte documentación funcional del proyecto.' },
+      { competencyId: 'PROFESSIONAL_OPENNESS', score: 3.4, stage: 'A', comments: 'Constante en formación SQL.' }
+    ],
+    kpis: [
+      { id: 'k40', kpi: 'Quality', weight: 35, targetValue: 3.0, currentValue: 3.3 },
+      { id: 'k41', kpi: 'Delivery', weight: 35, targetValue: 3.0, currentValue: 3.2 },
+      { id: 'k42', kpi: 'Customer Satisfaction', weight: 30, targetValue: 3.0, currentValue: 3.3 }
+    ]
+  },
+  {
+    id: 'CK015',
+    employeeId: 'E012',
+    projectId: 'PRJ001',
+    reviewerId: 'E006',
+    reviewDate: '2026-05-22',
+    reviewType: 'Quarterly',
+    comments: 'Q2 — Se detectan desviaciones de seguimiento presupuestario y falta de anticipación de riesgos en la cartera asignada.',
+    scores: [
+      { competencyId: 'CLIENT_ORIENTATION', score: 2.8, stage: 'B', comments: 'Gestión reactiva ante escalados de cliente.' },
+      { competencyId: 'INNOVATION', score: 2.6, stage: 'B', comments: 'Poca adopción de métricas automatizadas de delivery.' },
+      { competencyId: 'HUMAN_RELATIONS', score: 2.7, stage: 'C', comments: 'Fricciones puntuales en la coordinación entre equipos.' },
+      { competencyId: 'ORGANIZATION_RESULTS', score: 2.4, stage: 'C', comments: 'Desvíos de planificación en dos entregas clave.' },
+      { competencyId: 'TEAM_LEADERSHIP', score: 2.5, stage: 'C', comments: 'Necesita mayor acompañamiento y claridad de prioridades.' },
+      { competencyId: 'PROFESSIONAL_OPENNESS', score: 2.6, stage: 'B', comments: 'Baja participación en iniciativas de mejora.' }
+    ],
+    kpis: [
+      { id: 'k43', kpi: 'Delivery', weight: 40, targetValue: 4.5, currentValue: 2.6 },
+      { id: 'k44', kpi: 'Customer Satisfaction', weight: 30, targetValue: 4.5, currentValue: 2.8 },
+      { id: 'k45', kpi: 'Quality', weight: 30, targetValue: 4.5, currentValue: 2.7 }
+    ]
+  },
+  {
+    id: 'CK016',
+    employeeId: 'E012',
+    projectId: 'PRJ001',
+    reviewerId: 'E006',
+    reviewDate: '2026-10-30',
+    reviewType: 'Quarterly',
+    comments: 'Q4 — Persisten brechas respecto al estándar de Senior Manager (L5) en liderazgo, organización y relación ejecutiva.',
+    scores: [
+      { competencyId: 'CLIENT_ORIENTATION', score: 2.7, stage: 'B', comments: 'Requiere apoyo directivo para reconducir expectativas.' },
+      { competencyId: 'INNOVATION', score: 2.5, stage: 'B', comments: 'No impulsa estandarización de procesos.' },
+      { competencyId: 'HUMAN_RELATIONS', score: 2.6, stage: 'C', comments: 'Margen de mejora en generación de consensos.' },
+      { competencyId: 'ORGANIZATION_RESULTS', score: 2.4, stage: 'C', comments: 'Requiere plan de choque en control de riesgos y SLA.' },
+      { competencyId: 'TEAM_LEADERSHIP', score: 2.6, stage: 'C', comments: 'Delegación incompleta en responsables de squad.' },
+      { competencyId: 'PROFESSIONAL_OPENNESS', score: 2.5, stage: 'B', comments: 'Pendiente actualizar certificación de gestión.' }
+    ],
+    kpis: [
+      { id: 'k46', kpi: 'Delivery', weight: 40, targetValue: 4.5, currentValue: 2.5 },
+      { id: 'k47', kpi: 'Customer Satisfaction', weight: 30, targetValue: 4.5, currentValue: 2.7 },
+      { id: 'k48', kpi: 'Quality', weight: 30, targetValue: 4.5, currentValue: 2.6 }
+    ]
   }
 ];
 
@@ -763,6 +1318,45 @@ export const INITIAL_DEVELOPMENT_PLANS: DevelopmentPlan[] = [
     actions: [
       { id: 'DA003', type: 'Training', description: 'React 19, Next.js Masterclass & Tailwind Enterprise', targetDate: '2026-08-01', status: 'Pending', trainingId: 'TR2' },
       { id: 'DA004', type: 'Mentoring', description: 'Mentoría semanal con Alejandro Sanz sobre buenas prácticas Frontend', targetDate: '2026-12-01', status: 'InProgress' }
+    ]
+  },
+  {
+    id: 'DP003',
+    employeeId: 'E007', // Samsagaz Gamyi
+    year: 2026,
+    status: 'Active',
+    actions: [
+      { id: 'DA005', type: 'Training', description: 'React 19, Next.js Masterclass & Tailwind Enterprise', targetDate: '2026-04-30', status: 'Completed', trainingId: 'TR2' },
+      { id: 'DA006', type: 'Training', description: 'Arquitectura Enterprise con Clean Architecture y DDD', targetDate: '2026-08-30', status: 'Completed', trainingId: 'TR1' },
+      { id: 'DA007', type: 'Certification', description: 'Certificación Oficial AWS Solutions Architect Associate', targetDate: '2026-12-15', status: 'InProgress', trainingId: 'TR3' },
+      { id: 'DA008', type: 'Mentoring', description: 'Mentoría de liderazgo técnico y diseño de sistemas con Beatriz Ortiz', targetDate: '2026-12-20', status: 'InProgress' }
+    ]
+  },
+  {
+    id: 'DP004',
+    employeeId: 'E008',
+    year: 2026,
+    status: 'Completed',
+    actions: [
+      { id: 'DA009', type: 'Certification', description: 'Especialización ejecutiva en Gobierno de IA y Arquitectura Multi-Cloud', targetDate: '2026-09-30', status: 'Completed' }
+    ]
+  },
+  {
+    id: 'DP005',
+    employeeId: 'E009',
+    year: 2026,
+    status: 'Completed',
+    actions: [
+      { id: 'DA010', type: 'Training', description: 'Liderazgo Ágil, Gestión de Conflictos y Facilitación', targetDate: '2026-07-15', status: 'Completed', trainingId: 'TR4' }
+    ]
+  },
+  {
+    id: 'DP006',
+    employeeId: 'E012',
+    year: 2026,
+    status: 'Active',
+    actions: [
+      { id: 'DA011', type: 'Coaching', description: 'Plan intensivo de control de riesgos y gobernanza de entregas multi-squad', targetDate: '2027-03-31', status: 'InProgress' }
     ]
   }
 ];
@@ -829,6 +1423,225 @@ export const INITIAL_ANNUAL_EVALUATIONS: AnnualEvaluation[] = [
       ready: false,
       reason: 'Aunque el rendimiento es bueno, aún tiene pequeños gaps técnicos y necesita liderar células de desarrollo autónomas para calificar como Senior L3.'
     }
+  },
+  {
+    evaluationId: 'EV003',
+    employeeId: 'E007', // Samsagaz Gamyi
+    year: 2026,
+    currentLevelId: 'L3', // Senior Engineer (Nivel 2)
+    targetLevelId: 'L4', // Manager / Tech Lead (Nivel 3)
+    status: 'Calibration',
+    finalScore: 4.18,
+    evaluationResult: 'ExceedsExpectations',
+    dimensions: [
+      { id: 'd11', dimension: 'Competencies', weight: 40, score: 4.1 },
+      { id: 'd12', dimension: 'ProjectPerformance', weight: 30, score: 4.4 },
+      { id: 'd13', dimension: 'Training', weight: 15, score: 4.2 },
+      { id: 'd14', dimension: 'Feedback360', weight: 10, score: 4.0 },
+      { id: 'd15', dimension: 'CorporateContribution', weight: 5, score: 3.8 }
+    ],
+    competencies: [
+      { id: 'c13', competencyId: 'CLIENT_ORIENTATION', expectedStage: 'B', actualStage: 'B', score: 4.1, gap: 0 },
+      { id: 'c14', competencyId: 'INNOVATION', expectedStage: 'B', actualStage: 'C', score: 4.5, gap: 1 },
+      { id: 'c15', competencyId: 'HUMAN_RELATIONS', expectedStage: 'A', actualStage: 'B', score: 4.0, gap: 1 },
+      { id: 'c16', competencyId: 'TEAM_LEADERSHIP', expectedStage: 'A', actualStage: 'B', score: 3.8, gap: 1 },
+      { id: 'c17', competencyId: 'ORGANIZATION_RESULTS', expectedStage: 'B', actualStage: 'C', score: 4.2, gap: 1 },
+      { id: 'c18', competencyId: 'PROFESSIONAL_OPENNESS', expectedStage: 'B', actualStage: 'B', score: 4.2, gap: 0 }
+    ],
+    commentsManager: 'Evolución ejemplar a lo largo de los 4 checkpoints de 2026. Samsagaz arrancó el año en Etapa A de Nivel 2 y ha cerrado Q4 consolidando Etapa B en todas las competencias y Etapa C en Innovación y Organización. Pieza clave en el rediseño E-Commerce de Mercadona.',
+    commentsHR: 'Caso de referencia en la calibración de Software Engineering: progresión medible del +1.64 pts en promedio de competencias entre Q1 y Q4 y dos formaciones clave completadas. Listo para asumir responsabilidades de Tech Lead en Q1 2027 como paso previo a L4.',
+    promotionRecommendation: {
+      ready: false,
+      reason: 'Progresión sobresaliente de Etapa A a B/C durante 2026 (score global 4.18/5). Consolida plenamente Nivel 2; se recomienda reforzar liderazgo de equipo y gestión de clientes (Etapa C) en H1 2027 para optar a promoción L4.'
+    }
+  },
+  {
+    evaluationId: 'EV004',
+    employeeId: 'E008',
+    year: 2026,
+    currentLevelId: 'L4',
+    targetLevelId: 'L5',
+    status: 'Closed',
+    finalScore: 4.7,
+    evaluationResult: 'Promoted',
+    dimensions: [
+      { id: 'd16', dimension: 'Competencies', weight: 40, score: 4.7 },
+      { id: 'd17', dimension: 'ProjectPerformance', weight: 30, score: 4.8 },
+      { id: 'd18', dimension: 'Training', weight: 15, score: 4.6 },
+      { id: 'd19', dimension: 'Feedback360', weight: 10, score: 4.6 },
+      { id: 'd20', dimension: 'CorporateContribution', weight: 5, score: 4.5 }
+    ],
+    competencies: [
+      { id: 'c19', competencyId: 'CLIENT_ORIENTATION', expectedStage: 'D', actualStage: 'D', score: 4.8, gap: 0 },
+      { id: 'c20', competencyId: 'INNOVATION', expectedStage: 'D', actualStage: 'D', score: 4.9, gap: 0 },
+      { id: 'c21', competencyId: 'HUMAN_RELATIONS', expectedStage: 'C', actualStage: 'C', score: 4.4, gap: 0 },
+      { id: 'c22', competencyId: 'TEAM_LEADERSHIP', expectedStage: 'C', actualStage: 'C', score: 4.5, gap: 0 },
+      { id: 'c23', competencyId: 'ORGANIZATION_RESULTS', expectedStage: 'C', actualStage: 'C', score: 4.5, gap: 0 },
+      { id: 'c24', competencyId: 'PROFESSIONAL_OPENNESS', expectedStage: 'D', actualStage: 'D', score: 4.8, gap: 0 }
+    ],
+    commentsManager: 'Desempeño excepcional liderando la arquitectura de IA Generativa en Data & AI. Supera todos los objetivos de nivel L5.',
+    commentsHR: 'Promoción a Senior Manager (L5) ratificada en comité de calibración con revisión salarial asociada.',
+    promotionRecommendation: {
+      ready: true,
+      reason: 'Score global de 4.70/5. Cumple todas las etapas SSTD requeridas para L5 en Arquitectura y lidera cuentas estratégicas.'
+    }
+  },
+  {
+    evaluationId: 'EV005',
+    employeeId: 'E009',
+    year: 2026,
+    currentLevelId: 'L3',
+    targetLevelId: 'L4',
+    status: 'Closed',
+    finalScore: 4.25,
+    evaluationResult: 'ExceedsExpectations',
+    dimensions: [
+      { id: 'd21', dimension: 'Competencies', weight: 40, score: 4.2 },
+      { id: 'd22', dimension: 'ProjectPerformance', weight: 30, score: 4.4 },
+      { id: 'd23', dimension: 'Training', weight: 15, score: 4.3 },
+      { id: 'd24', dimension: 'Feedback360', weight: 10, score: 4.0 },
+      { id: 'd25', dimension: 'CorporateContribution', weight: 5, score: 4.1 }
+    ],
+    competencies: [
+      { id: 'c25', competencyId: 'CLIENT_ORIENTATION', expectedStage: 'B', actualStage: 'B', score: 4.1, gap: 0 },
+      { id: 'c26', competencyId: 'INNOVATION', expectedStage: 'C', actualStage: 'C', score: 4.5, gap: 0 },
+      { id: 'c27', competencyId: 'HUMAN_RELATIONS', expectedStage: 'B', actualStage: 'B', score: 4.0, gap: 0 },
+      { id: 'c28', competencyId: 'TEAM_LEADERSHIP', expectedStage: 'B', actualStage: 'B', score: 4.1, gap: 0 },
+      { id: 'c29', competencyId: 'ORGANIZATION_RESULTS', expectedStage: 'C', actualStage: 'C', score: 4.3, gap: 0 },
+      { id: 'c30', competencyId: 'PROFESSIONAL_OPENNESS', expectedStage: 'C', actualStage: 'C', score: 4.4, gap: 0 }
+    ],
+    commentsManager: 'Hugo ha asumido con éxito la coordinación técnica del equipo MLOps alcanzando todas las etapas SSTD del nivel Manager L4.',
+    commentsHR: 'Calibrado positivamente para promoción a Manager (L4) dentro del presupuesto de Data & AI.',
+    promotionRecommendation: {
+      ready: true,
+      reason: 'Score global de 4.25/5 y cumplimiento pleno de etapas B/C exigidas para Manager (L4) en Solution Building.'
+    }
+  },
+  {
+    evaluationId: 'EV006',
+    employeeId: 'E010',
+    year: 2026,
+    currentLevelId: 'L2',
+    targetLevelId: 'L3',
+    status: 'Closed',
+    finalScore: 3.85,
+    evaluationResult: 'ExceedsExpectations',
+    dimensions: [
+      { id: 'd26', dimension: 'Competencies', weight: 40, score: 3.8 },
+      { id: 'd27', dimension: 'ProjectPerformance', weight: 30, score: 3.9 },
+      { id: 'd28', dimension: 'Training', weight: 15, score: 4.0 },
+      { id: 'd29', dimension: 'Feedback360', weight: 10, score: 3.8 },
+      { id: 'd30', dimension: 'CorporateContribution', weight: 5, score: 3.6 }
+    ],
+    competencies: [
+      { id: 'c31', competencyId: 'CLIENT_ORIENTATION', expectedStage: 'B', actualStage: 'A', score: 3.6, gap: -1 },
+      { id: 'c32', competencyId: 'INNOVATION', expectedStage: 'B', actualStage: 'B', score: 4.0, gap: 0 },
+      { id: 'c33', competencyId: 'HUMAN_RELATIONS', expectedStage: 'A', actualStage: 'B', score: 3.8, gap: 1 },
+      { id: 'c34', competencyId: 'TEAM_LEADERSHIP', expectedStage: 'A', actualStage: 'A', score: 3.5, gap: 0 },
+      { id: 'c35', competencyId: 'ORGANIZATION_RESULTS', expectedStage: 'B', actualStage: 'A', score: 3.7, gap: -1 },
+      { id: 'c36', competencyId: 'PROFESSIONAL_OPENNESS', expectedStage: 'B', actualStage: 'B', score: 4.0, gap: 0 }
+    ],
+    commentsManager: 'Excelente año en entrega técnica de pipelines de datos. Aún necesita consolidar exposición directa con cliente para dar el salto a L3.',
+    commentsHR: 'Reconocimiento salarial por rendimiento superior a las expectativas en su nivel actual L2.',
+    promotionRecommendation: {
+      ready: false,
+      reason: 'Supera expectativas en L2 (3.85/5), pero tiene pendiente alcanzar Etapa B en Orientación al Cliente y Organización para optar a Senior Engineer L3.'
+    }
+  },
+  {
+    evaluationId: 'EV007',
+    employeeId: 'E011',
+    year: 2026,
+    currentLevelId: 'L1',
+    targetLevelId: 'L2',
+    status: 'Closed',
+    finalScore: 3.25,
+    evaluationResult: 'MeetsExpectations',
+    dimensions: [
+      { id: 'd31', dimension: 'Competencies', weight: 40, score: 3.2 },
+      { id: 'd32', dimension: 'ProjectPerformance', weight: 30, score: 3.3 },
+      { id: 'd33', dimension: 'Training', weight: 15, score: 3.4 },
+      { id: 'd34', dimension: 'Feedback360', weight: 10, score: 3.2 },
+      { id: 'd35', dimension: 'CorporateContribution', weight: 5, score: 3.0 }
+    ],
+    competencies: [
+      { id: 'c37', competencyId: 'CLIENT_ORIENTATION', expectedStage: 'A', actualStage: 'A', score: 3.3, gap: 0 },
+      { id: 'c38', competencyId: 'INNOVATION', expectedStage: 'A', actualStage: 'A', score: 3.2, gap: 0 },
+      { id: 'c39', competencyId: 'HUMAN_RELATIONS', expectedStage: 'A', actualStage: 'A', score: 3.4, gap: 0 },
+      { id: 'c40', competencyId: 'TEAM_LEADERSHIP', expectedStage: 'A', actualStage: 'A', score: 3.1, gap: 0 },
+      { id: 'c41', competencyId: 'ORGANIZATION_RESULTS', expectedStage: 'A', actualStage: 'A', score: 3.2, gap: 0 },
+      { id: 'c42', competencyId: 'PROFESSIONAL_OPENNESS', expectedStage: 'A', actualStage: 'A', score: 3.4, gap: 0 }
+    ],
+    commentsManager: 'Marcos cumple adecuadamente con los objetivos esperados para su primer año en Data & AI.',
+    commentsHR: 'Alineado con su nivel L1. Mantener acompañamiento técnico para ganar autonomía en SQL y modelado BI.',
+    promotionRecommendation: {
+      ready: false,
+      reason: 'Cumple expectativas en L1 (3.25/5); continúa ganando autonomía operativa antes de pasar a L2.'
+    }
+  },
+  {
+    evaluationId: 'EV008',
+    employeeId: 'E012',
+    year: 2026,
+    currentLevelId: 'L5',
+    targetLevelId: 'L6',
+    status: 'Closed',
+    finalScore: 2.6,
+    evaluationResult: 'Unsatisfactory',
+    dimensions: [
+      { id: 'd36', dimension: 'Competencies', weight: 40, score: 2.5 },
+      { id: 'd37', dimension: 'ProjectPerformance', weight: 30, score: 2.6 },
+      { id: 'd38', dimension: 'Training', weight: 15, score: 2.7 },
+      { id: 'd39', dimension: 'Feedback360', weight: 10, score: 2.7 },
+      { id: 'd40', dimension: 'CorporateContribution', weight: 5, score: 2.8 }
+    ],
+    competencies: [
+      { id: 'c43', competencyId: 'CLIENT_ORIENTATION', expectedStage: 'C', actualStage: 'B', score: 2.7, gap: -1 },
+      { id: 'c44', competencyId: 'INNOVATION', expectedStage: 'C', actualStage: 'B', score: 2.5, gap: -1 },
+      { id: 'c45', competencyId: 'HUMAN_RELATIONS', expectedStage: 'D', actualStage: 'C', score: 2.6, gap: -1 },
+      { id: 'c46', competencyId: 'TEAM_LEADERSHIP', expectedStage: 'D', actualStage: 'C', score: 2.6, gap: -1 },
+      { id: 'c47', competencyId: 'ORGANIZATION_RESULTS', expectedStage: 'D', actualStage: 'C', score: 2.4, gap: -1 },
+      { id: 'c48', competencyId: 'PROFESSIONAL_OPENNESS', expectedStage: 'C', actualStage: 'B', score: 2.5, gap: -1 }
+    ],
+    commentsManager: 'El rendimiento en gestión de riesgos y cumplimiento de entregas ha estado por debajo del estándar esperado para Senior Manager (L5).',
+    commentsHR: 'Se activa plan de seguimiento y mejora en gobernanza; sin incremento salarial en este ciclo.',
+    promotionRecommendation: {
+      ready: false,
+      reason: 'Nota global 2.60/5 (Por debajo de expectativas). Presenta brechas en todas las competencias exigidas para su nivel actual L5.'
+    }
+  }
+];
+
+export const INITIAL_DIVISION_BUDGETS: DivisionBudget[] = [
+  {
+    id: 'DIV_software_engineering',
+    division: 'Software Engineering',
+    raiseBudgetEur: 68500,
+    updatedAt: '2026-11-16T09:00:00.000Z'
+  },
+  {
+    id: 'DIV_architecture_tech_leadership',
+    division: 'Architecture & Tech Leadership',
+    raiseBudgetEur: 54000,
+    updatedAt: '2026-11-16T09:00:00.000Z'
+  },
+  {
+    id: 'DIV_project_product_management',
+    division: 'Project & Product Management',
+    raiseBudgetEur: 42000,
+    updatedAt: '2026-11-16T09:00:00.000Z'
+  },
+  {
+    id: 'DIV_consulting',
+    division: 'Consulting',
+    raiseBudgetEur: 38500,
+    updatedAt: '2026-11-16T09:00:00.000Z'
+  },
+  {
+    id: 'DIV_data_ai',
+    division: 'Data & AI',
+    raiseBudgetEur: 15000,
+    updatedAt: '2026-11-16T12:00:00.000Z'
   }
 ];
 
@@ -847,6 +1660,7 @@ export class DatabaseStore {
   private memCheckpoints = [...INITIAL_CHECKPOINTS];
   private memDevPlans = [...INITIAL_DEVELOPMENT_PLANS];
   private memAnnualEvaluations = [...INITIAL_ANNUAL_EVALUATIONS];
+  private memDivisionBudgets: DivisionBudget[] = [...INITIAL_DIVISION_BUDGETS];
 
   constructor() {}
 
@@ -855,6 +1669,7 @@ export class DatabaseStore {
       console.log('[Firestore] No active database connection. Operating in memory-only mode.');
       return;
     }
+    await testConnection();
     try {
       // Always update static reference specifications to match latest Guia de Carreras in DB
       console.log('[Firestore] Synchronizing static career specs...');
@@ -907,12 +1722,86 @@ export class DatabaseStore {
         for (const item of INITIAL_ANNUAL_EVALUATIONS) {
           await setDoc(doc(db, 'annualEvaluations', item.evaluationId), item);
         }
+        // Seed division budgets
+        for (const item of INITIAL_DIVISION_BUDGETS) {
+          await setDoc(doc(db, 'divisionBudgets', item.id), item);
+        }
+        await setDoc(doc(db, 'systemMeta', 'divisionBudgetsSeeded'), { seeded: true, seededAt: new Date().toISOString() });
+        await setDoc(doc(db, 'systemMeta', 'dataAiDivisionSeeded'), { seeded: true, seededAt: new Date().toISOString() });
         console.log('[Firestore] Data seeding completed.');
       } else {
-        console.log('[Firestore] Database is already seeded.');
+        console.log('[Firestore] Database is already seeded. Checking idempotent additions...');
+        await this.ensureRecordExists('employees', 'E007', INITIAL_EMPLOYEES.find(e => e.employeeId === 'E007'));
+        await this.ensureRecordExists('devPlans', 'DP003', INITIAL_DEVELOPMENT_PLANS.find(d => d.id === 'DP003'));
+        for (const ckId of ['CK003', 'CK004', 'CK005', 'CK006']) {
+          await this.ensureRecordExists('checkpoints', ckId, INITIAL_CHECKPOINTS.find(c => c.id === ckId));
+        }
+        await this.ensureRecordExists('annualEvaluations', 'EV003', INITIAL_ANNUAL_EVALUATIONS.find(ev => ev.evaluationId === 'EV003'));
+
+        // Ensure every seeded employee has their assigned division in Firestore
+        for (const emp of INITIAL_EMPLOYEES) {
+          if (emp.division) {
+            const empRef = doc(db, 'employees', emp.employeeId);
+            const empSnap = await getDoc(empRef);
+            if (empSnap.exists() && !empSnap.data()?.division) {
+              await updateDoc(empRef, { division: emp.division });
+            }
+          }
+        }
+
+        // Seed 4 initial division budgets once if not yet seeded
+        const seedMetaRef = doc(db, 'systemMeta', 'divisionBudgetsSeeded');
+        const seedMetaSnap = await getDoc(seedMetaRef);
+        if (!seedMetaSnap.exists()) {
+          const existingDivSnap = await getDocs(query(collection(db, 'divisionBudgets'), limit(1)));
+          if (existingDivSnap.empty) {
+            for (const item of INITIAL_DIVISION_BUDGETS) {
+              await setDoc(doc(db, 'divisionBudgets', item.id), item);
+            }
+          }
+          await setDoc(seedMetaRef, { seeded: true, seededAt: new Date().toISOString() });
+        }
+
+        // Idempotent seed for new Data & AI division (15,000 EUR) + 5 employees + checkpoints + closed evaluations
+        const dataAiMetaRef = doc(db, 'systemMeta', 'dataAiDivisionSeeded');
+        const dataAiMetaSnap = await getDoc(dataAiMetaRef);
+        if (!dataAiMetaSnap.exists()) {
+          for (const empId of ['E008', 'E009', 'E010', 'E011', 'E012']) {
+            await this.ensureRecordExists('employees', empId, INITIAL_EMPLOYEES.find(e => e.employeeId === empId));
+          }
+          for (const ckId of ['CK007', 'CK008', 'CK009', 'CK010', 'CK011', 'CK012', 'CK013', 'CK014', 'CK015', 'CK016']) {
+            await this.ensureRecordExists('checkpoints', ckId, INITIAL_CHECKPOINTS.find(c => c.id === ckId));
+          }
+          for (const dpId of ['DP004', 'DP005', 'DP006']) {
+            await this.ensureRecordExists('devPlans', dpId, INITIAL_DEVELOPMENT_PLANS.find(d => d.id === dpId));
+          }
+          for (const evId of ['EV004', 'EV005', 'EV006', 'EV007', 'EV008']) {
+            await this.ensureRecordExists('annualEvaluations', evId, INITIAL_ANNUAL_EVALUATIONS.find(ev => ev.evaluationId === evId));
+          }
+          await this.ensureRecordExists(
+            'divisionBudgets',
+            'DIV_data_ai',
+            INITIAL_DIVISION_BUDGETS.find(b => b.id === 'DIV_data_ai')
+          );
+          await setDoc(dataAiMetaRef, { seeded: true, seededAt: new Date().toISOString() });
+        }
       }
     } catch (err) {
       console.error('[Firestore] Failed to seed database:', err);
+    }
+  }
+
+  private async ensureRecordExists(collectionName: string, docId: string, data: any) {
+    if (!db || !data) return;
+    try {
+      const ref = doc(db, collectionName, docId);
+      const snap = await getDoc(ref);
+      if (!snap.exists()) {
+        await setDoc(ref, data);
+        console.log(`[Firestore] Seeded missing record ${collectionName}/${docId}`);
+      }
+    } catch (err) {
+      console.error(`[Firestore] Error checking/seeding ${collectionName}/${docId}:`, err);
     }
   }
 
@@ -927,8 +1816,7 @@ export class DatabaseStore {
       });
       return list;
     } catch (err) {
-      console.error(`[Firestore] Error fetching collection ${collectionName}:`, err);
-      return fallback;
+      handleFirestoreError(err, OperationType.LIST, collectionName);
     }
   }
 
@@ -981,6 +1869,46 @@ export class DatabaseStore {
     return this.getAllDocs<AnnualEvaluation>('annualEvaluations', this.memAnnualEvaluations);
   }
 
+  async getDivisionBudgets(): Promise<DivisionBudget[]> {
+    const list = await this.getAllDocs<DivisionBudget>('divisionBudgets', this.memDivisionBudgets);
+    return [...list].sort((a, b) => a.division.localeCompare(b.division, 'es'));
+  }
+
+  async replaceDivisionBudgets(items: DivisionBudget[]): Promise<DivisionBudget[]> {
+    this.memDivisionBudgets = [...items];
+    if (!db) {
+      return this.getDivisionBudgets();
+    }
+    try {
+      const existingSnap = await getDocs(collection(db, 'divisionBudgets'));
+      const incomingIds = new Set(items.map(i => i.id));
+      for (const docSnap of existingSnap.docs) {
+        if (!incomingIds.has(docSnap.id)) {
+          await deleteDoc(doc(db, 'divisionBudgets', docSnap.id));
+        }
+      }
+      for (const item of items) {
+        await setDoc(doc(db, 'divisionBudgets', item.id), item);
+      }
+      return this.getDivisionBudgets();
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, 'divisionBudgets');
+    }
+  }
+
+  async clearDivisionBudgets(): Promise<void> {
+    this.memDivisionBudgets = [];
+    if (!db) return;
+    try {
+      const existingSnap = await getDocs(collection(db, 'divisionBudgets'));
+      for (const docSnap of existingSnap.docs) {
+        await deleteDoc(doc(db, 'divisionBudgets', docSnap.id));
+      }
+    } catch (err) {
+      handleFirestoreError(err, OperationType.DELETE, 'divisionBudgets');
+    }
+  }
+
   // CRUD utilities
   async getEmployee(id: string): Promise<Employee | null> {
     if (!db) {
@@ -993,8 +1921,7 @@ export class DatabaseStore {
       }
       return null;
     } catch (err) {
-      console.error(`[Firestore] Error getting employee ${id}:`, err);
-      return this.memEmployees.find(e => e.employeeId === id) || null;
+      handleFirestoreError(err, OperationType.GET, `employees/${id}`);
     }
   }
 
@@ -1011,8 +1938,7 @@ export class DatabaseStore {
       await updateDoc(doc(db, 'employees', id), updated);
       return this.getEmployee(id);
     } catch (err) {
-      console.error(`[Firestore] Error updating employee ${id}:`, err);
-      return null;
+      handleFirestoreError(err, OperationType.UPDATE, `employees/${id}`);
     }
   }
 
@@ -1025,9 +1951,7 @@ export class DatabaseStore {
       await setDoc(doc(db, 'employees', emp.employeeId), emp);
       return emp;
     } catch (err) {
-      console.error('[Firestore] Error adding employee:', err);
-      this.memEmployees.push(emp);
-      return emp;
+      handleFirestoreError(err, OperationType.CREATE, `employees/${emp.employeeId}`);
     }
   }
 
@@ -1059,8 +1983,7 @@ export class DatabaseStore {
       }
       return null;
     } catch (err) {
-      console.error(`[Firestore] Error getting project ${id}:`, err);
-      return this.memProjects.find(p => p.projectId === id) || null;
+      handleFirestoreError(err, OperationType.GET, `projects/${id}`);
     }
   }
 
@@ -1073,9 +1996,7 @@ export class DatabaseStore {
       await setDoc(doc(db, 'projects', prj.projectId), prj);
       return prj;
     } catch (err) {
-      console.error('[Firestore] Error adding project:', err);
-      this.memProjects.push(prj);
-      return prj;
+      handleFirestoreError(err, OperationType.CREATE, `projects/${prj.projectId}`);
     }
   }
 
@@ -1088,9 +2009,7 @@ export class DatabaseStore {
       await setDoc(doc(db, 'roleRequests', req.id), req);
       return req;
     } catch (err) {
-      console.error('[Firestore] Error adding role request:', err);
-      this.memRoleRequests.push(req);
-      return req;
+      handleFirestoreError(err, OperationType.CREATE, `roleRequests/${req.id}`);
     }
   }
 
@@ -1112,9 +2031,7 @@ export class DatabaseStore {
       }
       return asg;
     } catch (err) {
-      console.error('[Firestore] Error adding project assignment:', err);
-      this.memAssignments.push(asg);
-      return asg;
+      handleFirestoreError(err, OperationType.CREATE, `assignments/${asg.assignmentId}`);
     }
   }
 
@@ -1127,9 +2044,7 @@ export class DatabaseStore {
       await setDoc(doc(db, 'checkpoints', chk.id), chk);
       return chk;
     } catch (err) {
-      console.error('[Firestore] Error adding checkpoint:', err);
-      this.memCheckpoints.push(chk);
-      return chk;
+      handleFirestoreError(err, OperationType.CREATE, `checkpoints/${chk.id}`);
     }
   }
 
@@ -1147,8 +2062,7 @@ export class DatabaseStore {
       const docSnap = await getDoc(doc(db, 'checkpoints', id));
       return docSnap.exists() ? (docSnap.data() as CheckpointReview) : null;
     } catch (err) {
-      console.error(`[Firestore] Error updating checkpoint ${id}:`, err);
-      return null;
+      handleFirestoreError(err, OperationType.UPDATE, `checkpoints/${id}`);
     }
   }
 
@@ -1166,8 +2080,7 @@ export class DatabaseStore {
       const docSnap = await getDoc(doc(db, 'annualEvaluations', id));
       return docSnap.exists() ? (docSnap.data() as AnnualEvaluation) : null;
     } catch (err) {
-      console.error(`[Firestore] Error updating evaluation ${id}:`, err);
-      return null;
+      handleFirestoreError(err, OperationType.UPDATE, `annualEvaluations/${id}`);
     }
   }
 
@@ -1180,9 +2093,7 @@ export class DatabaseStore {
       await setDoc(doc(db, 'annualEvaluations', val.evaluationId), val);
       return val;
     } catch (err) {
-      console.error('[Firestore] Error adding evaluation:', err);
-      this.memAnnualEvaluations.push(val);
-      return val;
+      handleFirestoreError(err, OperationType.CREATE, `annualEvaluations/${val.evaluationId}`);
     }
   }
 
@@ -1195,7 +2106,7 @@ export class DatabaseStore {
       description: action.description,
       targetDate: action.targetDate || new Date().toISOString().split('T')[0],
       status: action.status || 'Pending',
-      trainingId: action.trainingId
+      ...(action.trainingId ? { trainingId: action.trainingId } : {})
     };
 
     if (!plan) {
@@ -1209,7 +2120,11 @@ export class DatabaseStore {
       if (!db) {
         this.memDevPlans.push(newPlan);
       } else {
-        await setDoc(doc(db, 'devPlans', newPlan.id), newPlan);
+        try {
+          await setDoc(doc(db, 'devPlans', newPlan.id), newPlan);
+        } catch (err) {
+          handleFirestoreError(err, OperationType.CREATE, `devPlans/${newPlan.id}`);
+        }
       }
       return newPlan;
     } else {
@@ -1217,9 +2132,13 @@ export class DatabaseStore {
       if (!db) {
         plan.actions = updatedActions;
       } else {
-        await updateDoc(doc(db, 'devPlans', plan.id), { actions: updatedActions });
-        const docSnap = await getDoc(doc(db, 'devPlans', plan.id));
-        plan = docSnap.data() as DevelopmentPlan;
+        try {
+          await updateDoc(doc(db, 'devPlans', plan.id), { actions: updatedActions });
+          const docSnap = await getDoc(doc(db, 'devPlans', plan.id));
+          plan = docSnap.data() as DevelopmentPlan;
+        } catch (err) {
+          handleFirestoreError(err, OperationType.UPDATE, `devPlans/${plan.id}`);
+        }
       }
       return plan;
     }

@@ -3,7 +3,7 @@ import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { dbStoreInstance } from './src/data/dbStore';
 import { GoogleGenAI } from '@google/genai';
-import { ProjectRoleRequest, CheckpointReview, AnnualEvaluation } from './src/types';
+import { ProjectRoleRequest, CheckpointReview, AnnualEvaluation, DivisionBudget } from './src/types';
 
 // Lazy-initialized Gemini AI client
 let aiInstance: GoogleGenAI | null = null;
@@ -363,6 +363,76 @@ async function startServer() {
       const empId = req.params.employeeId;
       const plan = await dbStoreInstance.addDevPlanAction(empId, req.body);
       res.status(201).json(plan);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // 10. Division Raise Budgets (HR Only View)
+  app.get('/api/division-budgets', async (req, res) => {
+    try {
+      const budgets = await dbStoreInstance.getDivisionBudgets();
+      res.json(budgets);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.put('/api/division-budgets', async (req, res) => {
+    try {
+      const { budgets } = req.body || {};
+      if (!Array.isArray(budgets)) {
+        return res.status(400).json({ error: 'Se requiere una lista válida de presupuestos por división.' });
+      }
+
+      const now = new Date().toISOString();
+      const sanitized: DivisionBudget[] = [];
+      const seenIds = new Set<string>();
+
+      for (let idx = 0; idx < budgets.length; idx++) {
+        const item = budgets[idx];
+        const division = typeof item?.division === 'string' ? item.division.trim() : '';
+        const amount = Number(item?.raiseBudgetEur);
+
+        if (!division) {
+          return res.status(400).json({ error: `Fila ${idx + 1}: el nombre de la división es obligatorio.` });
+        }
+        if (!Number.isFinite(amount) || amount < 0) {
+          return res.status(400).json({ error: `División "${division}": el presupuesto debe ser un número válido >= 0.` });
+        }
+
+        const slug = division
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '_')
+          .replace(/^_+|_+$/g, '') || `div_${idx}`;
+
+        let docId = `DIV_${slug}`;
+        if (seenIds.has(docId)) {
+          docId = `DIV_${slug}_${idx}`;
+        }
+        seenIds.add(docId);
+
+        sanitized.push({
+          id: docId,
+          division,
+          raiseBudgetEur: Number(amount.toFixed(2)),
+          updatedAt: typeof item?.updatedAt === 'string' && item.updatedAt ? item.updatedAt : now
+        });
+      }
+
+      const saved = await dbStoreInstance.replaceDivisionBudgets(sanitized);
+      res.json(saved);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete('/api/division-budgets', async (req, res) => {
+    try {
+      await dbStoreInstance.clearDivisionBudgets();
+      res.json({ success: true, budgets: [] });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }

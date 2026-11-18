@@ -8,7 +8,7 @@ import {
   Briefcase, Users, Award, Brain, RefreshCw, Layers, MapPin, Building, Globe 
 } from 'lucide-react';
 import { 
-  Employee, Project, ProjectRoleRequest, ProjectAssignment, CheckpointReview, AnnualEvaluation, DevelopmentPlan, UserRole 
+  Employee, Project, ProjectRoleRequest, ProjectAssignment, CheckpointReview, AnnualEvaluation, DevelopmentPlan, DivisionBudget, UserRole 
 } from './types';
 import RoleSwitcher from './components/RoleSwitcher';
 import StaffingModule from './components/StaffingModule';
@@ -28,6 +28,7 @@ export default function App() {
   const [checkpoints, setCheckpoints] = useState<CheckpointReview[]>([]);
   const [annualEvaluations, setAnnualEvaluations] = useState<AnnualEvaluation[]>([]);
   const [devPlans, setDevPlans] = useState<DevelopmentPlan[]>([]);
+  const [divisionBudgets, setDivisionBudgets] = useState<DivisionBudget[]>([]);
 
   // Career framework details
   const [careerPaths, setCareerPaths] = useState<any[]>([]);
@@ -44,7 +45,7 @@ export default function App() {
     setIsLoading(true);
     setError(null);
     try {
-      const [frameworkRes, empRes, prjRes, reqRes, asgRes, chkRes, evalRes, devRes] = await Promise.all([
+      const [frameworkRes, empRes, prjRes, reqRes, asgRes, chkRes, evalRes, devRes, divBudgetRes] = await Promise.all([
         fetch('/api/career-framework'),
         fetch('/api/employees'),
         fetch('/api/projects'),
@@ -52,7 +53,8 @@ export default function App() {
         fetch('/api/assignments'),
         fetch('/api/checkpoints'),
         fetch('/api/annual-evaluations'),
-        fetch('/api/dev-plans')
+        fetch('/api/dev-plans'),
+        fetch('/api/division-budgets')
       ]);
 
       if (frameworkRes.ok && empRes.ok && prjRes.ok && reqRes.ok && asgRes.ok && chkRes.ok && evalRes.ok && devRes.ok) {
@@ -69,6 +71,9 @@ export default function App() {
         setCheckpoints(await chkRes.json());
         setAnnualEvaluations(await evalRes.json());
         setDevPlans(await devRes.json());
+        if (divBudgetRes.ok) {
+          setDivisionBudgets(await divBudgetRes.json());
+        }
       } else {
         setError('Error al recuperar datos del servidor de IT Consulting.');
       }
@@ -238,6 +243,7 @@ export default function App() {
                   <LearningModule
                     userRole={currentRole}
                     employees={employees}
+                    projects={projects}
                     trainings={trainings}
                     devPlans={devPlans}
                     checkpoints={checkpoints}
@@ -257,6 +263,8 @@ export default function App() {
                     careerLevels={careerLevels}
                     careerPaths={careerPaths}
                     competencies={competencies}
+                    divisionBudgets={divisionBudgets}
+                    onDivisionBudgetsChange={setDivisionBudgets}
                     onDataRefresh={fetchAllData}
                   />
                 )}
