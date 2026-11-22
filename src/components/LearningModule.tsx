@@ -1,11 +1,20 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
-  BookOpen, Target, Calendar, Award, Plus, Sparkles, CheckCircle, HelpCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, User, GraduationCap, ClipboardCheck, FileText, TrendingUp
+  AlertTriangle, BookOpen, Target, Calendar, Award, Plus, Sparkles, CheckCircle, HelpCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, User, GraduationCap, ClipboardCheck, FileText, TrendingDown, TrendingUp, Filter, Search, X, Info
 } from 'lucide-react';
 import { Employee, Project, TrainingCatalog, DevelopmentPlan, CheckpointReview, UserRole, CompetencyStage, RecognitionTagId, getRequiredStage, scoreToStage, getLevelTargetScore } from '../types';
 import { MarkdownView } from './MarkdownView';
 import EmployeeCVPanel from './EmployeeCVPanel';
 import EmployeeRecognitionIcons from './EmployeeRecognitionIcons';
+import TruncatedTooltip from './TruncatedTooltip';
+import { getEmployeeDivision } from '../utils/salaryRecommendation';
+import {
+  computeCompetencyScoreDrops,
+  groupDropsByCheckpoint,
+  indexDropsByCheckpointAndCompetency,
+  sortCheckpointsChronological,
+  sortCheckpointsNewestFirst
+} from '../utils/checkpointAlerts';
 
 interface LearningModuleProps {
   userRole: UserRole;
@@ -32,9 +41,11 @@ export default function LearningModule({
   competencies,
   onDataRefresh
 }: LearningModuleProps) {
-  // Selected Employee
+  // Selected Employee & List Filters
   const [selectedEmpId, setSelectedEmpId] = useState<string>('E001');
   const [targetLevelId, setTargetLevelId] = useState<string>('L4');
+  const [empDivisionFilter, setEmpDivisionFilter] = useState<string>('ALL');
+  const [empSearchQuery, setEmpSearchQuery] = useState<string>('');
 
   // AI Gap Analysis
   const [isGapLoading, setIsGapLoading] = useState(false);
@@ -97,7 +108,37 @@ export default function LearningModule({
     }
   };
 
-  // Get active selected employee objects
+  // Get active selected employee objects & filtered list
+  const availableDivisions = useMemo(() => {
+    const set = new Set<string>();
+    employees.forEach(emp => {
+      const div = getEmployeeDivision(emp);
+      if (div) set.add(div);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'es'));
+  }, [employees]);
+
+  const filteredEmployees = useMemo(() => {
+    const normalizedQuery = empSearchQuery
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+
+    return employees.filter(emp => {
+      if (empDivisionFilter !== 'ALL' && getEmployeeDivision(emp) !== empDivisionFilter) {
+        return false;
+      }
+      if (!normalizedQuery) return true;
+      const fullName = `${emp.name} ${emp.surname}`
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+      const empIdLower = emp.employeeId.toLowerCase();
+      return fullName.includes(normalizedQuery) || empIdLower.includes(normalizedQuery);
+    });
+  }, [employees, empDivisionFilter, empSearchQuery]);
+
   const selectedEmployee = employees.find(e => e.employeeId === selectedEmpId) || employees[0];
   const selectedPlan = devPlans.find(p => p.employeeId === selectedEmpId);
   const canManageRecognitions = userRole === 'RRHH' || userRole === 'ProjectManager';
@@ -520,45 +561,106 @@ export default function LearningModule({
         {/* Left Hand: Employee List and their Active Plan */}
         <div className="lg:col-span-4 space-y-6">
           <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-4">
-            <h3 className="text-sm font-bold text-slate-900 mb-3 flex items-center gap-2">
-              <User className="h-4 w-4 text-indigo-600" />
-              Selecciona Colaborador
-            </h3>
-            <p className="text-xs text-slate-500 mb-4">
-              Visualiza su plan de desarrollo, diagnostica brechas de promoción y haz seguimiento en el proyecto.
-            </p>
-
-            <div className="space-y-2 max-h-[258px] overflow-y-auto p-1 -m-1">
-              {employees.map((emp) => {
-                const isSelected = selectedEmpId === emp.employeeId;
-                return (
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5 min-w-0">
+                <User className="h-4 w-4 text-indigo-600 shrink-0" />
+                <span className="truncate">Selecciona Colaborador</span>
+                <span className="text-xs font-semibold text-slate-500 tabular-nums shrink-0">({filteredEmployees.length})</span>
+                <TruncatedTooltip
+                  text="Visualiza su plan de desarrollo, diagnostica brechas de promoción y haz seguimiento en el proyecto."
+                  onlyWhenTruncated={false}
+                  className="inline-flex items-center shrink-0"
+                >
                   <button
-                    key={emp.employeeId}
-                    id={`emp-select-${emp.employeeId}`}
                     type="button"
-                    onClick={() => setSelectedEmpId(emp.employeeId)}
-                    className={`w-full text-left p-2.5 rounded-lg border text-xs transition flex items-center justify-between gap-2 ${
-                      isSelected
-                        ? 'bg-indigo-50 border-indigo-500 ring-2 ring-indigo-500/35 shadow-xs'
-                        : 'bg-slate-50 border-slate-200 hover:bg-slate-100 hover:border-slate-300'
-                    }`}
+                    aria-label="Información sobre Selecciona Colaborador"
+                    className="text-blue-600 hover:text-blue-700 focus:text-blue-700 focus:outline-none p-0.5 rounded-full transition-colors"
                   >
-                    <div className="min-w-0">
-                      <div className="font-bold text-slate-900 flex items-center gap-1 min-w-0">
-                        <span className="truncate">{emp.name} {emp.surname}</span>
-                        <EmployeeRecognitionIcons employee={emp} size="xs" />
-                      </div>
-                      <div className="text-[10px] text-slate-500 mt-0.5 truncate">
-                        {careerPaths.find(p => p.id === emp.currentCareerPathId)?.name}
-                      </div>
-                    </div>
-                    <span className="text-[10px] font-mono bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded font-bold shrink-0">
-                      {emp.currentLevelId}
-                    </span>
+                    <Info className="h-3.5 w-3.5" />
                   </button>
-                );
-              })}
+                </TruncatedTooltip>
+              </h3>
             </div>
+
+            {/* Buscador por colaborador y filtro por división al mismo nivel */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 mb-3">
+              <div className="relative flex-1 min-w-0">
+                <Search className="h-3.5 w-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" aria-hidden="true" />
+                <input
+                  type="text"
+                  aria-label="Buscar colaborador por nombre o ID"
+                  value={empSearchQuery}
+                  onChange={e => setEmpSearchQuery(e.target.value)}
+                  placeholder="Buscar colaborador..."
+                  className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg pl-8 pr-7 py-1.5 text-slate-700 placeholder:text-slate-400 focus:outline-none focus:bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                />
+                {empSearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setEmpSearchQuery('')}
+                    aria-label="Limpiar búsqueda de colaborador"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+              <div className="relative sm:w-[155px] shrink-0">
+                <Filter className="h-3.5 w-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" aria-hidden="true" />
+                <select
+                  aria-label="Filtrar colaboradores por división"
+                  value={empDivisionFilter}
+                  onChange={e => setEmpDivisionFilter(e.target.value)}
+                  title={empDivisionFilter === 'ALL' ? 'Divisiones...' : empDivisionFilter}
+                  className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg pl-8 pr-2 py-1.5 text-slate-700 font-medium focus:outline-none focus:bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 truncate"
+                >
+                  <option value="ALL">Divisiones...</option>
+                  {availableDivisions.map(div => (
+                    <option key={div} value={div}>
+                      {div}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {filteredEmployees.length === 0 ? (
+              <p className="text-xs text-slate-400 italic bg-slate-50 p-3 rounded-lg border border-slate-200">
+                No se encontraron colaboradores que coincidan con los filtros seleccionados.
+              </p>
+            ) : (
+              <div className="space-y-2 max-h-[258px] overflow-y-auto p-1 -m-1">
+                {filteredEmployees.map((emp) => {
+                  const isSelected = selectedEmpId === emp.employeeId;
+                  return (
+                    <button
+                      key={emp.employeeId}
+                      id={`emp-select-${emp.employeeId}`}
+                      type="button"
+                      onClick={() => setSelectedEmpId(emp.employeeId)}
+                      className={`w-full text-left p-2.5 rounded-lg border text-xs transition flex items-center justify-between gap-2 ${
+                        isSelected
+                          ? 'bg-indigo-50 border-indigo-500 ring-2 ring-indigo-500/35 shadow-xs'
+                          : 'bg-slate-50 border-slate-200 hover:bg-slate-100 hover:border-slate-300'
+                      }`}
+                    >
+                      <div className="min-w-0">
+                        <div className="font-bold text-slate-900 flex items-center gap-1 min-w-0">
+                          <span className="truncate">{emp.name} {emp.surname}</span>
+                          <EmployeeRecognitionIcons employee={emp} size="xs" />
+                        </div>
+                        <div className="text-[10px] text-slate-500 mt-0.5 truncate">
+                          {careerPaths.find(p => p.id === emp.currentCareerPathId)?.name} · {getEmployeeDivision(emp)}
+                        </div>
+                      </div>
+                      <span className="text-[10px] font-mono bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded font-bold shrink-0">
+                        {emp.currentLevelId}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Development Plan Box */}
@@ -1048,11 +1150,14 @@ export default function LearningModule({
 
             <div className="space-y-4">
               {(() => {
-                const filtered = checkpoints
-                  .filter(cp => cp.employeeId === selectedEmpId)
-                  .sort((a, b) => new Date(a.reviewDate).getTime() - new Date(b.reviewDate).getTime());
+                const employeeCheckpoints = checkpoints.filter(cp => cp.employeeId === selectedEmpId);
+                const chronologicalCheckpoints = sortCheckpointsChronological(employeeCheckpoints);
+                const displayCheckpoints = sortCheckpointsNewestFirst(chronologicalCheckpoints);
+                const scoreDrops = computeCompetencyScoreDrops(chronologicalCheckpoints);
+                const dropsByCheckpoint = groupDropsByCheckpoint(scoreDrops);
+                const dropByCpAndComp = indexDropsByCheckpointAndCompetency(scoreDrops);
 
-                if (filtered.length === 0) {
+                if (chronologicalCheckpoints.length === 0) {
                   return (
                     <div className="text-center p-8 bg-slate-50 border border-slate-200/60 rounded-xl text-slate-500">
                       <ClipboardCheck className="mx-auto h-8 w-8 text-slate-300 mb-2" />
@@ -1066,7 +1171,7 @@ export default function LearningModule({
                   ? getLevelTargetScore(selectedEmployee.currentLevelId)
                   : 3.0;
 
-                const progressionPoints = filtered.map((cp) => {
+                const progressionPoints = chronologicalCheckpoints.map((cp) => {
                   const avgScore = cp.scores.length > 0
                     ? cp.scores.reduce((acc, s) => acc + s.score, 0) / cp.scores.length
                     : 0;
@@ -1092,7 +1197,7 @@ export default function LearningModule({
 
                 return (
                   <>
-                    {filtered.length >= 2 && (
+                    {chronologicalCheckpoints.length >= 2 && (
                       <div className="border border-slate-200 rounded-lg p-3.5 bg-slate-50/70 space-y-2.5">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <span className="text-xs font-semibold text-slate-900 flex items-center gap-1.5">
@@ -1130,9 +1235,10 @@ export default function LearningModule({
                       </div>
                     )}
 
-                    {filtered.map((cp) => {
+                    {displayCheckpoints.map((cp) => {
                   const emp = employees.find(e => e.employeeId === cp.employeeId);
                   const isEditing = editingCheckpointId === cp.id && editingCheckpoint;
+                  const cpDrops = dropsByCheckpoint.get(cp.id) || [];
                   
                   if (isEditing) {
                     return (
@@ -1365,12 +1471,27 @@ export default function LearningModule({
                   }
 
                   return (
-                    <div key={cp.id} className="border border-slate-150 rounded-xl p-3 bg-slate-50/30">
-                      <div className="flex justify-between items-start border-b border-slate-100 pb-2 mb-2">
+                    <div
+                      key={cp.id}
+                      className={`border rounded-xl p-3 ${
+                        cpDrops.length > 0
+                          ? 'border-rose-200 bg-rose-50/20'
+                          : 'border-slate-150 bg-slate-50/30'
+                      }`}
+                    >
+                      <div className="flex justify-between items-start border-b border-slate-100 pb-2 mb-2 gap-2">
                         <div>
-                          <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider bg-slate-200 px-1 py-0.5 rounded">
-                            {cp.reviewType} Review
-                          </span>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider bg-slate-200 px-1 py-0.5 rounded">
+                              {cp.reviewType} Review
+                            </span>
+                            {cpDrops.length > 0 && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded">
+                                <AlertTriangle className="h-3 w-3 text-rose-600 shrink-0" />
+                                Alerta descenso ({cpDrops.length})
+                              </span>
+                            )}
+                          </div>
                           <h4 className="text-xs font-bold text-slate-900 mt-1 inline-flex items-center gap-1.5">
                             <span>{emp ? `${emp.name} ${emp.surname}` : 'Colaborador Genérico'}</span>
                             <EmployeeRecognitionIcons employee={emp} size="xs" />
@@ -1392,6 +1513,35 @@ export default function LearningModule({
                           )}
                         </div>
                       </div>
+
+                      {cpDrops.length > 0 && (
+                        <div
+                          role="alert"
+                          className="mb-2.5 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2 text-xs text-rose-900 flex items-start gap-2"
+                        >
+                          <AlertTriangle className="h-4 w-4 text-rose-600 shrink-0 mt-0.5" />
+                          <div className="space-y-1 min-w-0">
+                            <div className="font-bold text-rose-800">
+                              Alerta: descenso en {cpDrops.length}{' '}
+                              {cpDrops.length === 1 ? 'competencia' : 'competencias'} respecto al checkpoint anterior
+                            </div>
+                            <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-rose-700">
+                              {cpDrops.map(d => {
+                                const compName =
+                                  competencies.find(c => c.id === d.competencyId)?.name || d.competencyId;
+                                return (
+                                  <span key={d.competencyId} className="font-medium">
+                                    {compName}:{' '}
+                                    <span className="font-mono font-bold tabular-nums">
+                                      {d.previousScore.toFixed(1)} → {d.currentScore.toFixed(1)} ({d.delta.toFixed(1)})
+                                    </span>
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                      )}
 
                       <p className="text-xs text-slate-700 italic bg-white p-2 rounded border border-slate-200/50">
                         "{cp.comments}"
@@ -1422,12 +1572,27 @@ export default function LearningModule({
                               const targetVal = emp ? getTargetScoreForLevelAndCompetency(emp.currentLevelId, s.competencyId) : 3;
                               const isMet = s.score >= targetVal;
                               const reqStage = emp ? getRequiredStage(emp.currentCareerPathId, emp.currentLevelId, s.competencyId) : 'B';
+                              const drop = dropByCpAndComp.get(`${cp.id}::${s.competencyId}`);
                               return (
-                                <span key={s.competencyId} className={`text-[10px] border px-2 py-0.5 rounded-full font-semibold flex items-center gap-1.5 ${
-                                  isMet ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-rose-50 text-rose-800 border-rose-200'
-                                }`}>
+                                <span
+                                  key={s.competencyId}
+                                  title={
+                                    drop
+                                      ? `Descenso respecto al checkpoint anterior (${drop.previousReviewDate}): ${drop.previousScore.toFixed(1)} → ${drop.currentScore.toFixed(1)}`
+                                      : undefined
+                                  }
+                                  className={`text-[10px] border px-2 py-0.5 rounded-full font-semibold flex items-center gap-1.5 ${
+                                    isMet ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-rose-50 text-rose-800 border-rose-200'
+                                  } ${drop ? 'ring-1 ring-rose-400' : ''}`}
+                                >
                                   <span>{compName}:</span>
                                   <strong className="font-bold text-slate-950">{s.score}</strong>
+                                  {drop && (
+                                    <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-rose-700 bg-rose-100 px-1 rounded">
+                                      <TrendingDown className="h-2.5 w-2.5" />
+                                      {drop.delta.toFixed(1)}
+                                    </span>
+                                  )}
                                   {s.stage && (
                                     <span className="text-[9px] bg-indigo-50 text-indigo-700 px-1 py-0.2 rounded font-bold uppercase border border-indigo-100">
                                       {s.stage}

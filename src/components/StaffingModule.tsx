@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Plus, Users, Briefcase, Zap, HelpCircle, CheckCircle2, AlertCircle, ChevronRight, Sparkles, ShieldAlert, FileText 
+  Plus, Users, Briefcase, Zap, ChevronRight, Sparkles, ShieldAlert, FileText, X, Eye, EyeOff, RefreshCw, Flame, Filter, AlertTriangle, Building2
 } from 'lucide-react';
-import { Project, ProjectRoleRequest, Employee, UserRole } from '../types';
+import { Project, ProjectRoleRequest, Employee, UserRole, RoleCriticality, ROLE_CRITICALITY_META, STANDARD_DIVISIONS } from '../types';
 import { MarkdownView } from './MarkdownView';
 import EmployeeCVPanel from './EmployeeCVPanel';
 import EmployeeRecognitionIcons from './EmployeeRecognitionIcons';
@@ -27,14 +27,16 @@ export default function StaffingModule({
   onDataRefresh
 }: StaffingModuleProps) {
   // Selection States
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [selectedRequest, setSelectedRequest] = useState<ProjectRoleRequest | null>(null);
   const [matchingCandidates, setMatchingCandidates] = useState<any[]>([]);
   const [isMatchingLoading, setIsMatchingLoading] = useState(false);
 
-  // IA Explanation states
-  const [explainingId, setExplainingId] = useState<string | null>(null);
-  const [aiExplanation, setAiExplanation] = useState<string | null>(null);
-  const [aiError, setAiError] = useState<string | null>(null);
+  // IA Explanation states (cached per request + candidate, hideable without losing content)
+  const [explainingKey, setExplainingKey] = useState<string | null>(null);
+  const [aiExplanations, setAiExplanations] = useState<Record<string, string>>({});
+  const [aiErrors, setAiErrors] = useState<Record<string, string>>({});
+  const [aiReportOpen, setAiReportOpen] = useState<Record<string, boolean>>({});
   const [cvEmployee, setCvEmployee] = useState<Employee | null>(null);
 
   // Forms states
@@ -44,6 +46,7 @@ export default function StaffingModule({
     clientName: '',
     projectName: '',
     businessUnit: 'IT Consulting',
+    division: 'Software Engineering',
     budget: 250000,
     technologies: '',
     startDate: new Date().toISOString().split('T')[0],
@@ -57,7 +60,8 @@ export default function StaffingModule({
     requiredLevelId: 'L3',
     requiredSkills: '',
     allocation: 100,
-    priority: 'High' as 'High' | 'Medium' | 'Low'
+    priority: 'High' as 'High' | 'Medium' | 'Low',
+    criticality: 'Medium' as RoleCriticality
   });
 
   const [showAddEmployee, setShowAddEmployee] = useState(false);
@@ -75,16 +79,14 @@ export default function StaffingModule({
     availabilityPercent: 100
   });
 
-  // Fetch match results whenever selected request changes
+  // Fetch match results whenever selected request changes (without clearing cached AI reports)
   useEffect(() => {
     if (selectedRequest) {
       fetchMatches(selectedRequest.id);
     } else {
       setMatchingCandidates([]);
     }
-    setAiExplanation(null);
-    setAiError(null);
-  }, [selectedRequest, employees]);
+  }, [selectedRequest?.id, employees]);
 
   const fetchMatches = async (reqId: string) => {
     setIsMatchingLoading(true);
@@ -123,6 +125,7 @@ export default function StaffingModule({
           clientName: '',
           projectName: '',
           businessUnit: 'IT Consulting',
+          division: 'Software Engineering',
           budget: 250000,
           technologies: '',
           startDate: new Date().toISOString().split('T')[0],
@@ -149,6 +152,15 @@ export default function StaffingModule({
       if (res.ok) {
         onDataRefresh();
         setShowAddRequest(false);
+        setNewRequest({
+          projectId: selectedProjectId || '',
+          careerPathId: 'P_SWE',
+          requiredLevelId: 'L3',
+          requiredSkills: '',
+          allocation: 100,
+          priority: 'High',
+          criticality: 'Medium'
+        });
       }
     } catch (err) {
       console.error(err);
@@ -195,6 +207,7 @@ export default function StaffingModule({
       country: newEmployee.country,
       office: newEmployee.office,
       department: newEmployee.department,
+      division: newEmployee.department,
       managerId: newEmployee.managerId || 'E004',
       careerManagerId: newEmployee.managerId || 'E004',
       currentCareerPathId: newEmployee.currentCareerPathId,
@@ -240,10 +253,22 @@ export default function StaffingModule({
     }
   };
 
-  const handleRequestAIExplanation = async (candidate: any) => {
-    setExplainingId(candidate.employeeId);
-    setAiExplanation(null);
-    setAiError(null);
+  const handleRequestAIExplanation = async (candidate: any, forceRefresh = false) => {
+    if (!selectedRequest) return;
+    const reportKey = `${selectedRequest.id}::${candidate.employeeId}`;
+
+    // If cached and not forcing refresh, toggle visibility or open without re-fetching
+    if (!forceRefresh && aiExplanations[reportKey]) {
+      setAiReportOpen(prev => ({ ...prev, [reportKey]: true }));
+      return;
+    }
+
+    setExplainingKey(reportKey);
+    setAiErrors(prev => {
+      const next = { ...prev };
+      delete next[reportKey];
+      return next;
+    });
     try {
       const res = await fetch('/api/ai/match-explanation', {
         method: 'POST',
@@ -256,21 +281,51 @@ export default function StaffingModule({
             levelScore: candidate.levelScore,
             availabilityScore: candidate.availabilityScore,
             performanceScore: candidate.performanceScore,
+            criticalityFitScore: candidate.criticalityFitScore,
+            autonomyScore: candidate.autonomyScore,
+            criticalitySignals: candidate.criticalitySignals,
+            sameDivision: candidate.sameDivision,
+            projectDivision: candidate.projectDivision,
+            candidateDivision: candidate.candidateDivision,
             globalScore: candidate.globalScore
           }
         })
       });
       if (res.ok) {
         const data = await res.json();
-        setAiExplanation(data.explanation);
+        setAiExplanations(prev => ({ ...prev, [reportKey]: data.explanation }));
+        setAiReportOpen(prev => ({ ...prev, [reportKey]: true }));
       } else {
         const errData = await res.json();
-        setAiError(errData.error || 'Error invocando a Gemini.');
+        setAiErrors(prev => ({ ...prev, [reportKey]: errData.error || 'Error invocando a Gemini.' }));
       }
     } catch (e: any) {
-      setAiError('Error de red al conectar con el servidor.');
+      setAiErrors(prev => ({ ...prev, [reportKey]: 'Error de red al conectar con el servidor.' }));
     } finally {
-      setExplainingId(null);
+      setExplainingKey(null);
+    }
+  };
+
+  const toggleReportVisibility = (reportKey: string, open?: boolean) => {
+    setAiReportOpen(prev => ({
+      ...prev,
+      [reportKey]: open !== undefined ? open : !prev[reportKey]
+    }));
+  };
+
+  const handleSelectProject = (projectId: string) => {
+    const nextProjectId = selectedProjectId === projectId ? null : projectId;
+    setSelectedProjectId(nextProjectId);
+    if (nextProjectId && selectedRequest && selectedRequest.projectId !== nextProjectId) {
+      setSelectedRequest(null);
+    }
+  };
+
+  const handleToggleAddRequest = () => {
+    const nextOpen = !showAddRequest;
+    setShowAddRequest(nextOpen);
+    if (nextOpen && selectedProjectId) {
+      setNewRequest(prev => ({ ...prev, projectId: selectedProjectId }));
     }
   };
 
@@ -304,12 +359,46 @@ export default function StaffingModule({
     }
   };
 
-  // Stats
+  // Stats & derived filters
+  const availableDivisions = Array.from(
+    new Set([
+      ...STANDARD_DIVISIONS,
+      ...projects.map(p => p.division).filter((d): d is string => Boolean(d && d.trim())),
+      ...employees.map(e => e.division || e.department).filter((d): d is string => Boolean(d && d.trim()))
+    ])
+  );
+
+  const filteredRoleRequests = selectedProjectId
+    ? roleRequests.filter(r => r.projectId === selectedProjectId)
+    : roleRequests;
+  const selectedProjectObj = selectedProjectId
+    ? projects.find(p => p.projectId === selectedProjectId) || null
+    : null;
+
   const activeRequestsCount = roleRequests.length;
   const onBenchCount = employees.filter(e => e.availabilityPercent === 100 && e.status === 'Active').length;
   const benchRate = Math.round((onBenchCount / employees.length) * 100) || 0;
 
   const isStaffingAuthorized = userRole === 'RRHH' || userRole === 'ProjectManager';
+
+  const getCriticalityBadgeStyle = (crit?: RoleCriticality) => {
+    switch (crit) {
+      case 'Critical':
+        return 'bg-rose-100 text-rose-800 border border-rose-200';
+      case 'High':
+        return 'bg-orange-100 text-orange-800 border border-orange-200';
+      case 'Low':
+        return 'bg-slate-100 text-slate-600 border border-slate-200';
+      case 'Medium':
+      default:
+        return 'bg-sky-50 text-sky-700 border border-sky-200';
+    }
+  };
+
+  const getCriticalityLabel = (crit?: RoleCriticality) => {
+    const key: RoleCriticality = crit && crit in ROLE_CRITICALITY_META ? crit : 'Medium';
+    return ROLE_CRITICALITY_META[key].label;
+  };
 
   return (
     <div id="staffing-module" className="space-y-6">
@@ -350,10 +439,22 @@ export default function StaffingModule({
           {/* Projects Card */}
           <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
             <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                <Briefcase className="h-4 w-4 text-slate-500" />
-                Catálogo de Proyectos
-              </h3>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                  <Briefcase className="h-4 w-4 text-slate-500" />
+                  Catálogo de Proyectos
+                </h3>
+                {selectedProjectId && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedProjectId(null)}
+                    className="text-[10px] font-semibold text-indigo-600 hover:text-indigo-800 bg-indigo-50 px-1.5 py-0.5 rounded inline-flex items-center gap-1 transition"
+                    title="Mostrar necesidades de todos los proyectos"
+                  >
+                    Ver todos <X className="h-2.5 w-2.5" />
+                  </button>
+                )}
+              </div>
               {isStaffingAuthorized && (
                 <button
                   id="add-project-btn"
@@ -404,6 +505,19 @@ export default function StaffingModule({
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">División *</label>
+                    <select
+                      value={newProject.division}
+                      onChange={e => setNewProject({...newProject, division: e.target.value})}
+                      className="w-full text-xs border border-slate-300 rounded p-1 bg-white"
+                      required
+                    >
+                      {availableDivisions.map(div => (
+                        <option key={div} value={div}>{div}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase">Línea Negocio</label>
                     <input
                       type="text"
@@ -412,6 +526,8 @@ export default function StaffingModule({
                       className="w-full text-xs border border-slate-300 rounded p-1 bg-white"
                     />
                   </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase">Presupuesto (€)</label>
                     <input
@@ -421,16 +537,16 @@ export default function StaffingModule({
                       className="w-full text-xs border border-slate-300 rounded p-1 bg-white"
                     />
                   </div>
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase">Tecnologías (separadas por comas)</label>
-                  <input
-                    type="text"
-                    placeholder="React, AWS, Node.js"
-                    value={newProject.technologies}
-                    onChange={e => setNewProject({...newProject, technologies: e.target.value})}
-                    className="w-full text-xs border border-slate-300 rounded p-1 bg-white"
-                  />
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">Tecnologías (comas)</label>
+                    <input
+                      type="text"
+                      placeholder="React, AWS, Node.js"
+                      value={newProject.technologies}
+                      onChange={e => setNewProject({...newProject, technologies: e.target.value})}
+                      className="w-full text-xs border border-slate-300 rounded p-1 bg-white"
+                    />
+                  </div>
                 </div>
                 <button
                   type="submit"
@@ -442,32 +558,71 @@ export default function StaffingModule({
             )}
 
             <div className="divide-y divide-slate-100 max-h-[300px] overflow-y-auto">
-              {projects.map((p) => (
-                <div key={p.projectId} className="p-3 hover:bg-slate-50 transition">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <span className="text-[10px] font-mono bg-slate-100 text-slate-600 px-1 py-0.5 rounded font-bold">
-                        {p.projectId}
-                      </span>
-                      <h4 className="text-xs font-bold text-slate-900 mt-1">{p.projectName}</h4>
-                      <p className="text-[11px] text-slate-500">Cliente: {p.clientName} | BU: {p.businessUnit}</p>
+              {projects.map((p) => {
+                const isProjectSelected = selectedProjectId === p.projectId;
+                const projectReqCount = roleRequests.filter(r => r.projectId === p.projectId).length;
+                return (
+                  <div
+                    key={p.projectId}
+                    role="button"
+                    tabIndex={0}
+                    aria-pressed={isProjectSelected}
+                    onClick={() => handleSelectProject(p.projectId)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        handleSelectProject(p.projectId);
+                      }
+                    }}
+                    className={`p-3 cursor-pointer transition focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 ${
+                      isProjectSelected
+                        ? 'bg-indigo-50/80 border-l-4 border-indigo-600'
+                        : 'hover:bg-slate-50'
+                    }`}
+                  >
+                    <div className="flex justify-between items-start gap-2">
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] font-mono bg-slate-100 text-slate-600 px-1 py-0.5 rounded font-bold">
+                            {p.projectId}
+                          </span>
+                          <span className="text-[10px] text-slate-400 font-medium">
+                            {projectReqCount} {projectReqCount === 1 ? 'necesidad' : 'necesidades'}
+                          </span>
+                        </div>
+                        <h4 className="text-xs font-bold text-slate-900 mt-1">{p.projectName}</h4>
+                        <p className="text-[11px] text-slate-500">Cliente: {p.clientName} | BU: {p.businessUnit}</p>
+                        {p.division && (
+                          <p className="text-[10px] text-indigo-700 font-semibold mt-0.5 inline-flex items-center gap-1">
+                            <Building2 className="h-3 w-3 text-indigo-500" />
+                            División: {p.division}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex flex-col items-end gap-1 shrink-0">
+                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                          p.status === 'Active' ? 'bg-emerald-50 text-emerald-700' :
+                          p.status === 'InPreparation' ? 'bg-blue-50 text-blue-700' : 'bg-slate-100 text-slate-600'
+                        }`}>
+                          {p.status}
+                        </span>
+                        {isProjectSelected && (
+                          <span className="text-[9px] font-bold text-indigo-700 bg-indigo-100 px-1.5 py-0.5 rounded inline-flex items-center gap-1">
+                            <Filter className="h-2.5 w-2.5" /> Filtrando
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-                      p.status === 'Active' ? 'bg-emerald-50 text-emerald-700' :
-                      p.status === 'InPreparation' ? 'bg-blue-50 text-blue-700' : 'bg-slate-100 text-slate-600'
-                    }`}>
-                      {p.status}
-                    </span>
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      {p.technologies.map(t => (
+                        <span key={t} className="text-[9px] bg-slate-100 text-slate-700 px-1.5 rounded">
+                          {t}
+                        </span>
+                      ))}
+                    </div>
                   </div>
-                  <div className="flex flex-wrap gap-1 mt-2">
-                    {p.technologies.map(t => (
-                      <span key={t} className="text-[9px] bg-slate-100 text-slate-700 px-1.5 rounded">
-                        {t}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
@@ -481,13 +636,29 @@ export default function StaffingModule({
               {isStaffingAuthorized && (
                 <button
                   id="add-request-btn"
-                  onClick={() => setShowAddRequest(!showAddRequest)}
+                  onClick={handleToggleAddRequest}
                   className="flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition"
                 >
                   <Plus className="h-3 w-3" /> Nueva Solicitud
                 </button>
               )}
             </div>
+
+            {selectedProjectObj && (
+              <div className="px-4 py-2 bg-indigo-50/70 border-b border-indigo-100 flex items-center justify-between gap-2 text-[11px]">
+                <span className="text-indigo-900 font-medium truncate">
+                  <Filter className="h-3 w-3 inline mr-1 text-indigo-600" />
+                  Proyecto: <strong className="font-bold">{selectedProjectObj.projectName}</strong> ({filteredRoleRequests.length})
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedProjectId(null)}
+                  className="text-indigo-700 hover:text-indigo-900 font-semibold shrink-0 inline-flex items-center gap-0.5"
+                >
+                  Ver todas <X className="h-3 w-3" />
+                </button>
+              </div>
+            )}
 
             {showAddRequest && (
               <form onSubmit={handleCreateRequest} className="p-4 bg-slate-50 border-b border-slate-200 space-y-3">
@@ -531,11 +702,13 @@ export default function StaffingModule({
                     </select>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-3 gap-2">
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase">Dedicación (%)</label>
                     <input
                       type="number"
+                      min="10"
+                      max="100"
                       value={newRequest.allocation}
                       onChange={e => setNewRequest({...newRequest, allocation: Number(e.target.value)})}
                       className="w-full text-xs border border-slate-300 rounded p-1 bg-white"
@@ -553,7 +726,23 @@ export default function StaffingModule({
                       <option value="Low">Baja</option>
                     </select>
                   </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">Criticidad</label>
+                    <select
+                      value={newRequest.criticality}
+                      onChange={e => setNewRequest({...newRequest, criticality: e.target.value as RoleCriticality})}
+                      className="w-full text-xs border border-slate-300 rounded p-1 bg-white"
+                    >
+                      <option value="Low">Baja</option>
+                      <option value="Medium">Media</option>
+                      <option value="High">Alta</option>
+                      <option value="Critical">Crítica</option>
+                    </select>
+                  </div>
                 </div>
+                <p className="text-[10px] text-slate-500 leading-snug">
+                  {ROLE_CRITICALITY_META[newRequest.criticality].description}
+                </p>
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase">Skills Requeridas (comas)</label>
                   <input
@@ -574,52 +763,86 @@ export default function StaffingModule({
             )}
 
             <div className="divide-y divide-slate-100 max-h-[350px] overflow-y-auto">
-              {roleRequests.map((req) => {
-                const isSelected = selectedRequest?.id === req.id;
-                const associatedProject = projects.find(p => p.projectId === req.projectId);
-                return (
-                  <div
-                    key={req.id}
-                    onClick={() => setSelectedRequest(req)}
-                    className={`p-3 cursor-pointer transition ${
-                      isSelected ? 'bg-indigo-50/70 border-l-4 border-indigo-600' : 'hover:bg-slate-50'
-                    }`}
-                  >
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <h4 className="text-xs font-bold text-slate-900">
-                          {careerPaths.find(p => p.id === req.careerPathId)?.name}
-                        </h4>
-                        <p className="text-[11px] text-indigo-700 font-semibold">{associatedProject?.projectName}</p>
-                        <p className="text-[11px] text-slate-500 mt-0.5">
-                          Nivel: <span className="text-slate-700 font-medium">{careerLevels.find(l => l.id === req.requiredLevelId)?.name}</span>
-                        </p>
+              {filteredRoleRequests.length === 0 ? (
+                <div className="p-6 text-center space-y-2">
+                  <p className="text-xs text-slate-500">
+                    No hay necesidades de staffing registradas para este proyecto.
+                  </p>
+                  {isStaffingAuthorized && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (selectedProjectId) {
+                          setNewRequest(prev => ({ ...prev, projectId: selectedProjectId }));
+                        }
+                        setShowAddRequest(true);
+                      }}
+                      className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 inline-flex items-center gap-1"
+                    >
+                      <Plus className="h-3 w-3" /> Crear solicitud para este proyecto
+                    </button>
+                  )}
+                </div>
+              ) : (
+                filteredRoleRequests.map((req) => {
+                  const isSelected = selectedRequest?.id === req.id;
+                  const associatedProject = projects.find(p => p.projectId === req.projectId);
+                  const reqCrit = req.criticality || 'Medium';
+                  return (
+                    <div
+                      key={req.id}
+                      onClick={() => setSelectedRequest(req)}
+                      className={`p-3 cursor-pointer transition ${
+                        isSelected ? 'bg-indigo-50/70 border-l-4 border-indigo-600' : 'hover:bg-slate-50'
+                      }`}
+                    >
+                      <div className="flex justify-between items-start gap-2">
+                        <div>
+                          <h4 className="text-xs font-bold text-slate-900">
+                            {careerPaths.find(p => p.id === req.careerPathId)?.name}
+                          </h4>
+                          <p className="text-[11px] text-indigo-700 font-semibold">{associatedProject?.projectName}</p>
+                          <p className="text-[11px] text-slate-500 mt-0.5">
+                            Nivel: <span className="text-slate-700 font-medium">{careerLevels.find(l => l.id === req.requiredLevelId)?.name}</span>
+                          </p>
+                        </div>
+                        <div className="flex flex-col items-end gap-1 shrink-0">
+                          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase ${
+                            req.priority === 'High' ? 'bg-red-50 text-red-700' :
+                            req.priority === 'Medium' ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-600'
+                          }`}>
+                            Prio: {req.priority}
+                          </span>
+                          <span
+                            title={ROLE_CRITICALITY_META[reqCrit].description}
+                            className={`text-[9px] font-bold px-1.5 py-0.5 rounded inline-flex items-center gap-1 ${getCriticalityBadgeStyle(reqCrit)}`}
+                          >
+                            {(reqCrit === 'Critical' || reqCrit === 'High') && (
+                              <Flame className="h-2.5 w-2.5" />
+                            )}
+                            Criticidad: {getCriticalityLabel(reqCrit)}
+                          </span>
+                        </div>
                       </div>
-                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase ${
-                        req.priority === 'High' ? 'bg-red-50 text-red-700' :
-                        req.priority === 'Medium' ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-600'
-                      }`}>
-                        {req.priority}
-                      </span>
-                    </div>
 
-                    <div className="flex flex-wrap gap-1 mt-2">
-                      {req.requiredSkills.map(s => (
-                        <span key={s} className="text-[9px] bg-indigo-100 text-indigo-800 px-1.5 py-0.2 rounded-full font-medium">
-                          {s}
+                      <div className="flex flex-wrap gap-1 mt-2">
+                        {req.requiredSkills.map(s => (
+                          <span key={s} className="text-[9px] bg-indigo-100 text-indigo-800 px-1.5 py-0.2 rounded-full font-medium">
+                            {s}
+                          </span>
+                        ))}
+                      </div>
+
+                      <div className="flex items-center justify-between text-[10px] text-slate-500 mt-2.5 pt-2 border-t border-slate-100">
+                        <span>Asignación: <strong className="text-slate-700">{req.allocation}%</strong></span>
+                        <span className="text-indigo-600 font-semibold flex items-center gap-0.5">
+                          Buscar Matches <ChevronRight className="h-3 w-3" />
                         </span>
-                      ))}
+                      </div>
                     </div>
-
-                    <div className="flex items-center justify-between text-[10px] text-slate-500 mt-2.5 pt-2 border-t border-slate-100">
-                      <span>Asignación: <strong className="text-slate-700">{req.allocation}%</strong></span>
-                      <span className="text-indigo-600 font-semibold flex items-center gap-0.5">
-                        Buscar Matches <ChevronRight className="h-3 w-3" />
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
+                  );
+                })
+              )}
             </div>
           </div>
 
@@ -679,16 +902,15 @@ export default function StaffingModule({
                     />
                   </div>
                   <div>
-                    <label className="text-[10px] font-bold text-slate-500 uppercase">Departamento</label>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">División / Departamento</label>
                     <select
                       value={newEmployee.department}
                       onChange={e => setNewEmployee({...newEmployee, department: e.target.value})}
                       className="w-full text-xs border border-slate-300 rounded p-1 bg-white"
                     >
-                      <option value="Software Engineering">Software Engineering</option>
-                      <option value="Architecture & Tech Leadership">Architecture & Tech Leadership</option>
-                      <option value="Project & Product Management">Project & Product Management</option>
-                      <option value="Consulting">Consulting</option>
+                      {availableDivisions.map(div => (
+                        <option key={div} value={div}>{div}</option>
+                      ))}
                     </select>
                   </div>
                 </div>
@@ -850,19 +1072,45 @@ export default function StaffingModule({
             ) : (
               <div className="space-y-6">
                 <div className="border-b border-slate-100 pb-4">
-                  <div className="flex justify-between items-start">
+                  <div className="flex justify-between items-start gap-3">
                     <div>
-                      <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider block">Búsqueda Activa</span>
-                      <h3 className="text-base font-bold text-slate-900">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider">Búsqueda Activa</span>
+                        <span
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded inline-flex items-center gap-1 ${getCriticalityBadgeStyle(selectedRequest.criticality)}`}
+                        >
+                          {(selectedRequest.criticality === 'Critical' || selectedRequest.criticality === 'High') && (
+                            <Flame className="h-3 w-3" />
+                          )}
+                          Criticidad {getCriticalityLabel(selectedRequest.criticality)}
+                        </span>
+                      </div>
+                      <h3 className="text-base font-bold text-slate-900 mt-0.5">
                         {careerPaths.find(p => p.id === selectedRequest.careerPathId)?.name}
                       </h3>
-                      <p className="text-xs text-slate-500">
-                        Proyecto: {projects.find(p => p.projectId === selectedRequest.projectId)?.projectName}
-                      </p>
+                      {(() => {
+                        const activePrj = projects.find(p => p.projectId === selectedRequest.projectId);
+                        return (
+                          <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                            <p className="text-xs text-slate-500">
+                              Proyecto: <strong className="text-slate-700">{activePrj?.projectName}</strong>
+                            </p>
+                            {activePrj?.division && (
+                              <span
+                                title="Se prioriza ligeramente a colaboradores pertenecientes a esta división"
+                                className="text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 px-1.5 py-0.5 rounded inline-flex items-center gap-1"
+                              >
+                                <Building2 className="h-3 w-3" />
+                                División: {activePrj.division}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </div>
                     <button
                       onClick={() => setSelectedRequest(null)}
-                      className="text-xs text-slate-400 hover:text-slate-600"
+                      className="text-xs text-slate-400 hover:text-slate-600 shrink-0"
                     >
                       Cerrar
                     </button>
@@ -872,7 +1120,7 @@ export default function StaffingModule({
                 {isMatchingLoading ? (
                   <div className="flex flex-col items-center justify-center py-12">
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mb-2" />
-                    <p className="text-xs text-slate-500">Calculando compatibilidad técnica, disponibilidad y desempeño...</p>
+                    <p className="text-xs text-slate-500">Calculando compatibilidad técnica, disponibilidad, evaluaciones y autonomía...</p>
                   </div>
                 ) : (
                   <div className="space-y-6">
@@ -883,8 +1131,11 @@ export default function StaffingModule({
 
                       <div className="space-y-3">
                         {matchingCandidates.map((c) => {
-                          const isExplaining = explainingId === c.employeeId;
-                          const showCurrentExpt = explainingId === c.employeeId || aiExplanation;
+                          const reportKey = `${selectedRequest.id}::${c.employeeId}`;
+                          const isExplaining = explainingKey === reportKey;
+                          const cachedReport = aiExplanations[reportKey];
+                          const isReportOpen = Boolean(aiReportOpen[reportKey]);
+                          const reportError = aiErrors[reportKey];
 
                           // color coding global score
                           const scoreColor = 
@@ -896,12 +1147,36 @@ export default function StaffingModule({
                             <div key={c.employeeId} className="border border-slate-200 rounded-lg p-3 hover:shadow-sm transition bg-slate-50/50">
                               <div className="flex justify-between items-start gap-3">
                                 <div className="space-y-0.5">
-                                  <h5 className="text-xs font-bold text-slate-900 inline-flex items-center gap-1.5">
-                                    <span>{c.employee.name} {c.employee.surname}</span>
-                                    <EmployeeRecognitionIcons employee={c.employee} size="xs" />
-                                  </h5>
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <h5 className="text-xs font-bold text-slate-900 inline-flex items-center gap-1.5">
+                                      <span>{c.employee.name} {c.employee.surname}</span>
+                                      <EmployeeRecognitionIcons employee={c.employee} size="xs" />
+                                    </h5>
+                                    {(() => {
+                                      const candidateDiv = c.candidateDivision || c.employee.division || c.employee.department;
+                                      const isDifferentDivision = Boolean(
+                                        c.projectDivision &&
+                                          c.sameDivision === false &&
+                                          candidateDiv
+                                      );
+                                      if (!isDifferentDivision) return null;
+                                      return (
+                                        <span
+                                          title={
+                                            c.crossDivisionGoodMatch
+                                              ? `Buen encaje para el rol, pero pertenece a la división "${candidateDiv}" (proyecto en "${c.projectDivision}")`
+                                              : `Pertenece a la división "${candidateDiv}" (proyecto en "${c.projectDivision}")`
+                                          }
+                                          className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300"
+                                        >
+                                          <AlertTriangle className="h-3 w-3 text-amber-700 shrink-0" />
+                                          Otra división: {candidateDiv}
+                                        </span>
+                                      );
+                                    })()}
+                                  </div>
                                   <p className="text-[11px] text-slate-500">
-                                    Nivel: <strong className="text-slate-700">{careerLevels.find(l => l.id === c.employee.currentLevelId)?.name}</strong> | Depto: {c.employee.department}
+                                    Nivel: <strong className="text-slate-700">{careerLevels.find(l => l.id === c.employee.currentLevelId)?.name}</strong>
                                   </p>
                                   <p className="text-[11px] text-slate-500">
                                     Disponibilidad Actual: <strong className="text-emerald-600">{c.employee.availabilityPercent}%</strong>
@@ -915,7 +1190,7 @@ export default function StaffingModule({
                               </div>
 
                               {/* Breakdown of algorithms */}
-                              <div className="grid grid-cols-4 gap-2 mt-3 pt-2 border-t border-slate-100 text-center">
+                              <div className="grid grid-cols-5 gap-2 mt-3 pt-2 border-t border-slate-100 text-center">
                                 <div>
                                   <span className="text-[9px] font-bold text-slate-400 block uppercase">Skills</span>
                                   <span className="text-xs font-semibold text-slate-700">{c.skillScore}%</span>
@@ -932,26 +1207,77 @@ export default function StaffingModule({
                                   <span className="text-[9px] font-bold text-slate-400 block uppercase">Desempeño</span>
                                   <span className="text-xs font-semibold text-slate-700">{c.performanceScore}%</span>
                                 </div>
+                                <div title="Puntuación de idoneidad para puestos críticos: Alto Potencial, Evaluaciones Anuales y Autonomía">
+                                  <span className="text-[9px] font-bold text-slate-400 block uppercase">Auton./Crit.</span>
+                                  <span className={`text-xs font-semibold ${
+                                    (c.criticalityFitScore ?? 0) >= 75 ? 'text-indigo-700' : 'text-slate-700'
+                                  }`}>
+                                    {c.criticalityFitScore ?? c.performanceScore}%
+                                  </span>
+                                </div>
                               </div>
+
+                              {/* Criticality signals */}
+                              {Array.isArray(c.criticalitySignals) && c.criticalitySignals.length > 0 && (
+                                <div className="flex flex-wrap gap-1.5 mt-2">
+                                  {c.criticalitySignals.map((sig: string) => {
+                                    const isWarning = sig.startsWith('Eval. baja');
+                                    const isTalent = sig === 'Alto Potencial' || sig === 'Key person';
+                                    return (
+                                      <span
+                                        key={sig}
+                                        className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${
+                                          isWarning
+                                            ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                                            : isTalent
+                                            ? 'bg-amber-50 text-amber-800 border border-amber-200'
+                                            : 'bg-indigo-50 text-indigo-700 border border-indigo-100'
+                                        }`}
+                                      >
+                                        {sig}
+                                      </span>
+                                    );
+                                  })}
+                                </div>
+                              )}
 
                               {/* Action Bar */}
                               <div className="flex justify-end gap-2 mt-4 pt-2 border-t border-slate-100">
-                                <button
-                                  onClick={() => handleRequestAIExplanation(c)}
-                                  disabled={isExplaining}
-                                  className="flex items-center gap-1 bg-indigo-50 text-indigo-700 text-[10px] font-bold px-2.5 py-1 rounded border border-indigo-100 hover:bg-indigo-100 transition disabled:opacity-50"
-                                >
-                                  {isExplaining ? (
-                                    <>
-                                      <div className="animate-spin h-3 w-3 border-b-2 border-indigo-700 rounded-full" />
-                                      Analizando...
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Sparkles className="h-3 w-3" /> Explicar Match (IA)
-                                    </>
-                                  )}
-                                </button>
+                                {cachedReport ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleReportVisibility(reportKey)}
+                                    className="flex items-center gap-1 bg-indigo-50 text-indigo-700 text-[10px] font-bold px-2.5 py-1 rounded border border-indigo-200 hover:bg-indigo-100 transition"
+                                  >
+                                    {isReportOpen ? (
+                                      <>
+                                        <EyeOff className="h-3 w-3" /> Ocultar Informe (IA)
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Eye className="h-3 w-3" /> Ver Informe (IA)
+                                      </>
+                                    )}
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRequestAIExplanation(c)}
+                                    disabled={isExplaining}
+                                    className="flex items-center gap-1 bg-indigo-50 text-indigo-700 text-[10px] font-bold px-2.5 py-1 rounded border border-indigo-100 hover:bg-indigo-100 transition disabled:opacity-50"
+                                  >
+                                    {isExplaining ? (
+                                      <>
+                                        <div className="animate-spin h-3 w-3 border-b-2 border-indigo-700 rounded-full" />
+                                        Analizando...
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Sparkles className="h-3 w-3" /> Explicar Match (IA)
+                                      </>
+                                    )}
+                                  </button>
+                                )}
                                 {isStaffingAuthorized && (
                                   <button
                                     onClick={() => handleAssignCandidate(c)}
@@ -962,23 +1288,62 @@ export default function StaffingModule({
                                 )}
                               </div>
 
-                              {/* Display IA explanation inside candidate card if specifically requested for this candidate */}
-                              {explainingId === null && aiExplanation && (
-                                <div className="mt-4 bg-indigo-50/50 border border-indigo-100 rounded-lg p-3 space-y-2">
-                                  <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-900">
-                                    <Sparkles className="h-4 w-4 text-indigo-600" />
-                                    Informe de Idoneidad Generado por Gemini AI
+                              {/* Display IA explanation inside candidate card if generated and currently open */}
+                              {cachedReport && isReportOpen && (
+                                <div className="mt-4 bg-indigo-50/50 border border-indigo-200 rounded-lg p-3 space-y-2">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-900">
+                                      <Sparkles className="h-4 w-4 text-indigo-600 shrink-0" />
+                                      Informe de Idoneidad Generado por Gemini AI
+                                    </div>
+                                    <div className="flex items-center gap-1 shrink-0">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRequestAIExplanation(c, true)}
+                                        disabled={isExplaining}
+                                        title="Regenerar informe con Gemini AI"
+                                        className="p-1 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-100 rounded transition disabled:opacity-50"
+                                      >
+                                        <RefreshCw className={`h-3.5 w-3.5 ${isExplaining ? 'animate-spin' : ''}`} />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => toggleReportVisibility(reportKey, false)}
+                                        aria-label="Ocultar informe de idoneidad"
+                                        title="Ocultar informe (mantiene el contenido generado)"
+                                        className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-200/70 px-1.5 py-0.5 rounded transition"
+                                      >
+                                        <X className="h-3.5 w-3.5" />
+                                        <span>Ocultar</span>
+                                      </button>
+                                    </div>
                                   </div>
                                   <div className="bg-white border border-slate-200/50 rounded-md p-3 max-h-[250px] overflow-y-auto">
-                                    <MarkdownView content={aiExplanation} />
+                                    <MarkdownView content={cachedReport} />
                                   </div>
                                 </div>
                               )}
 
-                              {aiError && (
-                                <div className="mt-3 bg-red-50 text-red-700 border border-red-200 text-xs rounded p-2 flex items-center gap-1.5">
-                                  <ShieldAlert className="h-4 w-4 shrink-0" />
-                                  {aiError}
+                              {reportError && (
+                                <div className="mt-3 bg-red-50 text-red-700 border border-red-200 text-xs rounded p-2 flex items-center justify-between gap-2">
+                                  <div className="flex items-center gap-1.5">
+                                    <ShieldAlert className="h-4 w-4 shrink-0" />
+                                    <span>{reportError}</span>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setAiErrors(prev => {
+                                        const next = { ...prev };
+                                        delete next[reportKey];
+                                        return next;
+                                      })
+                                    }
+                                    aria-label="Cerrar error"
+                                    className="text-red-500 hover:text-red-800 p-0.5 rounded"
+                                  >
+                                    <X className="h-3.5 w-3.5" />
+                                  </button>
                                 </div>
                               )}
                             </div>

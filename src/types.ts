@@ -77,7 +77,7 @@ export interface EmployeeCertification {
   expiryDate: string;
 }
 
-export type RecognitionTagId = 'high_potential';
+export type RecognitionTagId = 'high_potential' | 'key_person';
 
 export interface RecognitionDefinition {
   id: RecognitionTagId;
@@ -93,6 +93,13 @@ export const TALENT_RECOGNITIONS: RecognitionDefinition[] = [
     tooltip: 'Alto potencial',
     description:
       'Indica que es un perfil estratégico con gran proyección de crecimiento y desarrollo dentro de la empresa. Su perfil mostrará un distintivo visible para el resto de responsables y administradores.'
+  },
+  {
+    id: 'key_person',
+    label: 'Key person',
+    tooltip: 'Key person',
+    description:
+      'Indica que es una persona clave para la continuidad operativa, el conocimiento crítico o los clientes estratégicos de la empresa. Su perfil mostrará un distintivo visible para el resto de responsables y administradores.'
   }
 ];
 
@@ -127,17 +134,50 @@ export interface Employee {
   languages?: string[];
 }
 
+export const STANDARD_DIVISIONS = [
+  'Software Engineering',
+  'Architecture & Tech Leadership',
+  'Project & Product Management',
+  'Consulting',
+  'Data & AI'
+] as const;
+
 export interface Project {
   projectId: string;
   clientName: string;
   projectName: string;
   businessUnit: string;
+  division?: string;
   status: 'InPreparation' | 'Active' | 'OnHold' | 'Completed';
   startDate: string;
   endDate: string;
   budget: number;
   technologies: string[];
 }
+
+export type RoleCriticality = 'Low' | 'Medium' | 'High' | 'Critical';
+
+export const ROLE_CRITICALITY_META: Record<
+  RoleCriticality,
+  { label: string; description: string }
+> = {
+  Low: {
+    label: 'Baja',
+    description: 'Posición estándar sin exigencia adicional de autonomía o criticidad.'
+  },
+  Medium: {
+    label: 'Media',
+    description: 'Posición operativa habitual con ponderación equilibrada entre técnica y disponibilidad.'
+  },
+  High: {
+    label: 'Alta',
+    description: 'Posición sensible: aumenta la prioridad de talento Alto Potencial, buenas evaluaciones e independencia.'
+  },
+  Critical: {
+    label: 'Crítica',
+    description: 'Posición de máxima criticidad: prioriza fuertemente Alto Potencial, evaluaciones excelentes y autonomía demostrada.'
+  }
+};
 
 export interface ProjectRoleRequest {
   id: string;
@@ -148,6 +188,7 @@ export interface ProjectRoleRequest {
   startDate: string;
   allocation: number; // expected % dedication
   priority: 'High' | 'Medium' | 'Low';
+  criticality?: RoleCriticality;
 }
 
 export interface ProjectAssignment {
@@ -168,6 +209,15 @@ export interface MatchingResult {
   levelScore: number; // 0-100
   availabilityScore: number; // 0-100
   performanceScore: number; // 0-100
+  criticalityFitScore?: number; // 0-100
+  autonomyScore?: number; // 0-100
+  evaluationScore?: number | null; // 1-5
+  criticalitySignals?: string[];
+  requestCriticality?: RoleCriticality;
+  sameDivision?: boolean;
+  projectDivision?: string;
+  candidateDivision?: string;
+  crossDivisionGoodMatch?: boolean;
   globalScore: number; // 0-100
 }
 

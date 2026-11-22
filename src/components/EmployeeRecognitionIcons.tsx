@@ -1,5 +1,5 @@
 import { Fragment } from 'react';
-import { Star } from 'lucide-react';
+import { KeyRound, Star } from 'lucide-react';
 import { Employee, RecognitionTagId, TALENT_RECOGNITIONS } from '../types';
 import TruncatedTooltip from './TruncatedTooltip';
 
@@ -10,10 +10,28 @@ interface EmployeeRecognitionIconsProps {
   className?: string;
 }
 
-const renderRecognitionIcon = (id: RecognitionTagId, sizeClass: string) => {
+export const renderRecognitionIcon = (
+  id: RecognitionTagId,
+  sizeClass: string,
+  active = true
+) => {
   switch (id) {
     case 'high_potential':
-      return <Star className={`${sizeClass} text-amber-600/80 fill-amber-300/65 shrink-0`} />;
+      return (
+        <Star
+          className={`${sizeClass} shrink-0 ${
+            active ? 'text-amber-600/80 fill-amber-300/65' : 'text-slate-400'
+          }`}
+        />
+      );
+    case 'key_person':
+      return (
+        <KeyRound
+          className={`${sizeClass} shrink-0 ${
+            active ? 'text-indigo-600/80 fill-indigo-200/50' : 'text-slate-400'
+          }`}
+        />
+      );
     default:
       return <Star className={`${sizeClass} text-amber-600/80 shrink-0`} />;
   }

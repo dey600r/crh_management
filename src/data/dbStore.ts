@@ -12,9 +12,15 @@ import {
   AnnualEvaluation,
   DevelopmentPlan,
   DivisionBudget,
+  RoleCriticality,
+  CompetencyStage,
   VALID_RECOGNITION_IDS,
   getDefaultSalaryForLevel
 } from '../types';
+import {
+  getGlobalUnrecoveredCompetencyDrops,
+  sortCheckpointsChronological
+} from '../utils/checkpointAlerts';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getFirestore, collection, getDocs, doc, getDoc, getDocFromServer, setDoc, updateDoc, deleteDoc, query, limit } from 'firebase/firestore';
 import { readFileSync, existsSync } from 'fs';
@@ -887,6 +893,75 @@ export const INITIAL_EMPLOYEES: Employee[] = [
     projectHistory: [
       { projectId: 'PRJ001', role: 'Data Program Manager', performance: 2.7 }
     ]
+  },
+  {
+    employeeId: 'E013',
+    name: 'Diego',
+    surname: 'Romero Navarro',
+    email: 'diego.romero@itconsulting.com',
+    country: 'España',
+    office: 'Madrid',
+    department: 'Data & AI',
+    division: 'Data & AI',
+    managerId: 'E008',
+    careerManagerId: 'E008',
+    currentCareerPathId: 'P_SWE',
+    currentLevelId: 'L2',
+    hireDate: '2024-04-15',
+    status: 'Active',
+    availabilityPercent: 40,
+    salaryEur: 31500,
+    bio: 'Ingeniero de Datos especializado en ingesta distribuida, modelado SQL y automatización ETL en Python y Spark. Tras un primer semestre muy sólido en 2026, sufrió bajadas puntuales en organización y orientación al cliente durante el cierre del año tras cambios de alcance.',
+    education: [
+      'Grado en Ingeniería de Datos — Universidad Politécnica de Madrid (2019–2023)'
+    ],
+    languages: ['Español (Nativo)', 'Inglés (B2)'],
+    skills: [
+      { skillId: 's38', name: 'Python', category: 'Data & AI', level: 4, validatedDate: '2026-07-10', source: 'Project' },
+      { skillId: 's39', name: 'Apache Spark', category: 'Data & AI', level: 3, validatedDate: '2026-08-05', source: 'Project' },
+      { skillId: 's40', name: 'SQL', category: 'Databases', level: 4, validatedDate: '2026-06-20', source: 'Project' }
+    ],
+    certifications: [
+      { id: 'c12', certificationName: 'dbt Analytics Engineering Certification', provider: 'dbt Labs', issueDate: '2025-10-12', expiryDate: '2027-10-12' }
+    ],
+    projectHistory: [
+      { projectId: 'PRJ003', role: 'Data Pipeline Engineer', performance: 3.4 }
+    ]
+  },
+  {
+    employeeId: 'E014',
+    name: 'Clara',
+    surname: 'Domínguez Vidal',
+    email: 'clara.dominguez@itconsulting.com',
+    country: 'España',
+    office: 'Madrid',
+    department: 'Data & AI',
+    division: 'Data & AI',
+    managerId: 'E008',
+    careerManagerId: 'E008',
+    currentCareerPathId: 'P_SWE',
+    currentLevelId: 'L3',
+    hireDate: '2022-05-10',
+    status: 'Active',
+    availabilityPercent: 30,
+    salaryEur: 41000,
+    bio: 'Ingeniera Senior de Datos y Arquitecturas Cloud especializada en streaming con Kafka, Python y optimización de plataformas analíticas. Durante 2026 superó un bache puntual en Q2 recuperando plenamente sus indicadores de cliente y organización en el segundo semestre.',
+    education: [
+      'Grado en Ingeniería Informática — Universidad Autónoma de Madrid (2016–2020)',
+      'Máster en Big Data & Cloud Engineering — UAM (2021)'
+    ],
+    languages: ['Español (Nativo)', 'Inglés (C1)'],
+    skills: [
+      { skillId: 's41', name: 'Python', category: 'Data & AI', level: 5, validatedDate: '2026-10-10', source: 'Project' },
+      { skillId: 's42', name: 'Apache Spark', category: 'Data & AI', level: 4, validatedDate: '2026-09-20', source: 'Project' },
+      { skillId: 's43', name: 'AWS', category: 'Cloud', level: 4, validatedDate: '2026-10-05', source: 'Project' }
+    ],
+    certifications: [
+      { id: 'c13', certificationName: 'AWS Certified Data Engineer - Associate', provider: 'AWS', issueDate: '2025-11-15', expiryDate: '2028-11-15' }
+    ],
+    projectHistory: [
+      { projectId: 'PRJ003', role: 'Senior Data Platform Engineer', performance: 4.2 }
+    ]
   }
 ];
 
@@ -896,6 +971,7 @@ export const INITIAL_PROJECTS: Project[] = [
     clientName: 'Banco Santander',
     projectName: 'Cloud Migration & Core Modernization',
     businessUnit: 'Banca y Seguros',
+    division: 'Architecture & Tech Leadership',
     status: 'Active',
     startDate: '2025-01-10',
     endDate: '2026-12-31',
@@ -907,6 +983,7 @@ export const INITIAL_PROJECTS: Project[] = [
     clientName: 'Mercadona',
     projectName: 'E-Commerce Redesign & Microservices',
     businessUnit: 'Retail & Logística',
+    division: 'Software Engineering',
     status: 'InPreparation',
     startDate: '2026-08-01',
     endDate: '2027-05-31',
@@ -918,6 +995,7 @@ export const INITIAL_PROJECTS: Project[] = [
     clientName: 'Telefónica',
     projectName: 'IoT Device Analytics Platform',
     businessUnit: 'Telecomunicaciones',
+    division: 'Data & AI',
     status: 'Active',
     startDate: '2025-06-01',
     endDate: '2026-06-01',
@@ -935,7 +1013,8 @@ export const INITIAL_ROLE_REQUESTS: ProjectRoleRequest[] = [
     requiredSkills: ['React', 'Node.js', 'TypeScript'],
     startDate: '2026-08-01',
     allocation: 100,
-    priority: 'High'
+    priority: 'High',
+    criticality: 'High'
   },
   {
     id: 'REQ002',
@@ -945,7 +1024,8 @@ export const INITIAL_ROLE_REQUESTS: ProjectRoleRequest[] = [
     requiredSkills: ['Kubernetes', 'AWS', 'Terraform'],
     startDate: '2026-07-20',
     allocation: 100,
-    priority: 'High'
+    priority: 'High',
+    criticality: 'Critical'
   },
   {
     id: 'REQ003',
@@ -955,7 +1035,8 @@ export const INITIAL_ROLE_REQUESTS: ProjectRoleRequest[] = [
     requiredSkills: ['Vue', 'MongoDB'],
     startDate: '2026-08-15',
     allocation: 50,
-    priority: 'Medium'
+    priority: 'Medium',
+    criticality: 'Medium'
   }
 ];
 
@@ -1311,6 +1392,226 @@ export const INITIAL_CHECKPOINTS: CheckpointReview[] = [
       { id: 'k47', kpi: 'Customer Satisfaction', weight: 30, targetValue: 4.5, currentValue: 2.7 },
       { id: 'k48', kpi: 'Quality', weight: 30, targetValue: 4.5, currentValue: 2.6 }
     ]
+  },
+  {
+    id: 'CK017',
+    employeeId: 'E013',
+    projectId: 'PRJ003',
+    reviewerId: 'E008',
+    reviewDate: '2026-03-18',
+    reviewType: 'Quarterly',
+    comments: 'Q1 — Buen arranque en Nivel 1 (L2) dentro de Data & AI, cumpliendo hitos iniciales de ingesta y pruebas SQL.',
+    scores: [
+      { competencyId: 'CLIENT_ORIENTATION', score: 3.2, stage: 'A', comments: 'Recoge requisitos funcionales con apoyo del tech lead.' },
+      { competencyId: 'INNOVATION', score: 3.4, stage: 'A', comments: 'Propone validaciones automáticas en scripts Python.' },
+      { competencyId: 'HUMAN_RELATIONS', score: 3.3, stage: 'A', comments: 'Integración fluida con el squad de ingeniería.' },
+      { competencyId: 'ORGANIZATION_RESULTS', score: 3.2, stage: 'A', comments: 'Cumple entregas acotadas dentro de sprint.' },
+      { competencyId: 'TEAM_LEADERSHIP', score: 3.0, stage: 'A', comments: 'Colabora en revisiones cruzadas de código.' },
+      { competencyId: 'PROFESSIONAL_OPENNESS', score: 3.4, stage: 'A', comments: 'Actitud proactiva para aprender Spark.' }
+    ],
+    kpis: [
+      { id: 'k49', kpi: 'Quality', weight: 40, targetValue: 3.5, currentValue: 3.4 },
+      { id: 'k50', kpi: 'Delivery', weight: 30, targetValue: 3.5, currentValue: 3.3 },
+      { id: 'k51', kpi: 'Customer Satisfaction', weight: 30, targetValue: 3.5, currentValue: 3.3 }
+    ]
+  },
+  {
+    id: 'CK018',
+    employeeId: 'E013',
+    projectId: 'PRJ003',
+    reviewerId: 'E008',
+    reviewDate: '2026-06-22',
+    reviewType: 'Quarterly',
+    comments: 'Q2 — Clara progresión técnica y de autonomía. Mejora notable en estimación y comunicación con cliente.',
+    scores: [
+      { competencyId: 'CLIENT_ORIENTATION', score: 3.8, stage: 'B', comments: 'Participa con soltura en demos y alinea criterios con negocio.' },
+      { competencyId: 'INNOVATION', score: 4.0, stage: 'B', comments: 'Optimiza tiempos de ejecución ETL un 28%.' },
+      { competencyId: 'HUMAN_RELATIONS', score: 3.7, stage: 'B', comments: 'Buena coordinación con QA y analistas.' },
+      { competencyId: 'ORGANIZATION_RESULTS', score: 3.9, stage: 'B', comments: 'Planifica dependencias con rigor y sin desvíos.' },
+      { competencyId: 'TEAM_LEADERSHIP', score: 3.5, stage: 'A', comments: 'Ayuda a incorporar a perfiles junior en dbt.' },
+      { competencyId: 'PROFESSIONAL_OPENNESS', score: 3.8, stage: 'B', comments: 'Comparte aprendizajes de Spark en sesiones técnicas.' }
+    ],
+    kpis: [
+      { id: 'k52', kpi: 'Quality', weight: 40, targetValue: 3.5, currentValue: 4.0 },
+      { id: 'k53', kpi: 'Delivery', weight: 30, targetValue: 3.5, currentValue: 3.9 },
+      { id: 'k54', kpi: 'Customer Satisfaction', weight: 30, targetValue: 3.5, currentValue: 3.8 }
+    ]
+  },
+  {
+    id: 'CK019',
+    employeeId: 'E013',
+    projectId: 'PRJ003',
+    reviewerId: 'E008',
+    reviewDate: '2026-09-24',
+    reviewType: 'Quarterly',
+    comments: 'Q3 — Alerta de retroceso: tras cambios de alcance en Telefónica, decaen la planificación de entregas y la anticipación con cliente.',
+    scores: [
+      { competencyId: 'CLIENT_ORIENTATION', score: 3.4, stage: 'A', comments: 'Menor seguimiento proactivo de cambios funcionales en cliente.' },
+      { competencyId: 'INNOVATION', score: 4.0, stage: 'B', comments: 'Mantiene buen criterio técnico en refactoring.' },
+      { competencyId: 'HUMAN_RELATIONS', score: 3.7, stage: 'B', comments: 'Trato cordial pese a picos de carga.' },
+      { competencyId: 'ORGANIZATION_RESULTS', score: 3.3, stage: 'A', comments: 'Desviaciones de plazo en dos pipelines críticos.' },
+      { competencyId: 'TEAM_LEADERSHIP', score: 3.5, stage: 'A', comments: 'Mantiene apoyo técnico puntual al equipo.' },
+      { competencyId: 'PROFESSIONAL_OPENNESS', score: 3.9, stage: 'B', comments: 'Receptivo al plan de corrección acordado.' }
+    ],
+    kpis: [
+      { id: 'k55', kpi: 'Quality', weight: 40, targetValue: 3.5, currentValue: 3.6 },
+      { id: 'k56', kpi: 'Delivery', weight: 30, targetValue: 3.5, currentValue: 3.2 },
+      { id: 'k57', kpi: 'Customer Satisfaction', weight: 30, targetValue: 3.5, currentValue: 3.4 }
+    ]
+  },
+  {
+    id: 'CK020',
+    employeeId: 'E013',
+    projectId: 'PRJ003',
+    reviewerId: 'E008',
+    reviewDate: '2026-11-12',
+    reviewType: 'Quarterly',
+    comments: 'Q4 — Estabiliza parcialmente la organización, pero se mantiene alerta por nueva bajada en Orientación al Cliente e Innovación frente al tramo central del año.',
+    scores: [
+      { competencyId: 'CLIENT_ORIENTATION', score: 3.0, stage: 'A', comments: 'Faltó anticipación en el cierre funcional de las últimas entregas.' },
+      { competencyId: 'INNOVATION', score: 3.5, stage: 'A', comments: 'Priorizó soluciones rápidas frente a diseño modular.' },
+      { competencyId: 'HUMAN_RELATIONS', score: 3.7, stage: 'B', comments: 'Buena actitud colaborativa dentro del squad.' },
+      { competencyId: 'ORGANIZATION_RESULTS', score: 3.4, stage: 'A', comments: 'Recupera parcialmente el control de tareas y estimaciones.' },
+      { competencyId: 'TEAM_LEADERSHIP', score: 3.5, stage: 'A', comments: 'Mantiene participación estable en ceremonias.' },
+      { competencyId: 'PROFESSIONAL_OPENNESS', score: 3.9, stage: 'B', comments: 'Inicia formación específica de gestión del tiempo y foco en cliente.' }
+    ],
+    kpis: [
+      { id: 'k58', kpi: 'Quality', weight: 40, targetValue: 3.5, currentValue: 3.5 },
+      { id: 'k59', kpi: 'Delivery', weight: 30, targetValue: 3.5, currentValue: 3.4 },
+      { id: 'k60', kpi: 'Customer Satisfaction', weight: 30, targetValue: 3.5, currentValue: 3.1 }
+    ]
+  },
+  {
+    id: 'CK021',
+    employeeId: 'E012',
+    projectId: 'PRJ001',
+    reviewerId: 'E006',
+    reviewDate: '2026-02-20',
+    reviewType: 'Quarterly',
+    comments: 'Q1 — Arranque de ejercicio por debajo del nivel esperado para Senior Manager (L5); se requiere mayor control proactivo de hitos y riesgos.',
+    scores: [
+      { competencyId: 'CLIENT_ORIENTATION', score: 2.9, stage: 'B', comments: 'Seguimiento reactivo en reuniones iniciales de seguimiento.' },
+      { competencyId: 'INNOVATION', score: 2.7, stage: 'B', comments: 'Escasa automatización de cuadros de control.' },
+      { competencyId: 'HUMAN_RELATIONS', score: 2.8, stage: 'C', comments: 'Alineación mejorable entre líderes de squad.' },
+      { competencyId: 'ORGANIZATION_RESULTS', score: 2.5, stage: 'C', comments: 'Desajustes tempranos en planificación presupuestaria.' },
+      { competencyId: 'TEAM_LEADERSHIP', score: 2.6, stage: 'C', comments: 'Priorización poco clara ante dependencias externas.' },
+      { competencyId: 'PROFESSIONAL_OPENNESS', score: 2.7, stage: 'B', comments: 'Baja implicación en mejoras metodológicas.' }
+    ],
+    kpis: [
+      { id: 'k61', kpi: 'Delivery', weight: 40, targetValue: 4.5, currentValue: 2.7 },
+      { id: 'k62', kpi: 'Customer Satisfaction', weight: 30, targetValue: 4.5, currentValue: 2.9 },
+      { id: 'k63', kpi: 'Quality', weight: 30, targetValue: 4.5, currentValue: 2.8 }
+    ]
+  },
+  {
+    id: 'CK022',
+    employeeId: 'E012',
+    projectId: 'PRJ001',
+    reviewerId: 'E006',
+    reviewDate: '2026-08-18',
+    reviewType: 'Quarterly',
+    comments: 'Q3 — Se mantiene la misma línea insuficiente en control de entregas y liderazgo ejecutivo pese a las pautas de seguimiento.',
+    scores: [
+      { competencyId: 'CLIENT_ORIENTATION', score: 2.7, stage: 'B', comments: 'Continúan incidencias de expectativa con cliente.' },
+      { competencyId: 'INNOVATION', score: 2.5, stage: 'B', comments: 'Sin avances en estandarización de métricas.' },
+      { competencyId: 'HUMAN_RELATIONS', score: 2.6, stage: 'C', comments: 'Persisten tensiones puntuales entre áreas.' },
+      { competencyId: 'ORGANIZATION_RESULTS', score: 2.4, stage: 'C', comments: 'Mantiene desviaciones en hitos clave.' },
+      { competencyId: 'TEAM_LEADERSHIP', score: 2.5, stage: 'C', comments: 'Falta empuje en seguimiento diario del equipo.' },
+      { competencyId: 'PROFESSIONAL_OPENNESS', score: 2.5, stage: 'B', comments: 'Sin avances en plan formativo de gestión.' }
+    ],
+    kpis: [
+      { id: 'k64', kpi: 'Delivery', weight: 40, targetValue: 4.5, currentValue: 2.5 },
+      { id: 'k65', kpi: 'Customer Satisfaction', weight: 30, targetValue: 4.5, currentValue: 2.7 },
+      { id: 'k66', kpi: 'Quality', weight: 30, targetValue: 4.5, currentValue: 2.6 }
+    ]
+  },
+  {
+    id: 'CK023',
+    employeeId: 'E014',
+    projectId: 'PRJ003',
+    reviewerId: 'E008',
+    reviewDate: '2026-03-10',
+    reviewType: 'Quarterly',
+    comments: 'Q1 — Sólido comienzo de año en Nivel 2 (L3), cumpliendo con rigor los estándares de plataforma de datos y relación con cliente.',
+    scores: [
+      { competencyId: 'CLIENT_ORIENTATION', score: 4.0, stage: 'B', comments: 'Interlocución fluida con producto y anticipación de requisitos.' },
+      { competencyId: 'INNOVATION', score: 4.1, stage: 'C', comments: 'Propone arquitectura limpia para colas de ingesta.' },
+      { competencyId: 'HUMAN_RELATIONS', score: 3.9, stage: 'B', comments: 'Colaboración efectiva entre ingeniería y QA.' },
+      { competencyId: 'ORGANIZATION_RESULTS', score: 4.0, stage: 'B', comments: 'Planificación precisa de entregas quincenales.' },
+      { competencyId: 'TEAM_LEADERSHIP', score: 3.8, stage: 'B', comments: 'Acompaña activamente a perfiles L1/L2.' },
+      { competencyId: 'PROFESSIONAL_OPENNESS', score: 4.1, stage: 'C', comments: 'Comparte guías técnicas de Spark en la división.' }
+    ],
+    kpis: [
+      { id: 'k67', kpi: 'Quality', weight: 35, targetValue: 4.0, currentValue: 4.0 },
+      { id: 'k68', kpi: 'Delivery', weight: 35, targetValue: 4.0, currentValue: 4.0 },
+      { id: 'k69', kpi: 'Customer Satisfaction', weight: 30, targetValue: 4.0, currentValue: 4.0 }
+    ]
+  },
+  {
+    id: 'CK024',
+    employeeId: 'E014',
+    projectId: 'PRJ003',
+    reviewerId: 'E008',
+    reviewDate: '2026-06-12',
+    reviewType: 'Quarterly',
+    comments: 'Q2 — Bache puntual por solapamiento de incidencias en producción: bajan temporalmente Orientación al Cliente y Organización.',
+    scores: [
+      { competencyId: 'CLIENT_ORIENTATION', score: 3.4, stage: 'A', comments: 'Comunicación menos frecuente durante picos de incidencias.' },
+      { competencyId: 'INNOVATION', score: 4.1, stage: 'C', comments: 'Mantiene buena capacidad técnica de diagnóstico.' },
+      { competencyId: 'HUMAN_RELATIONS', score: 3.9, stage: 'B', comments: 'Buen clima de trabajo con el equipo.' },
+      { competencyId: 'ORGANIZATION_RESULTS', score: 3.3, stage: 'A', comments: 'Replanificaciones en dos sprints por deuda técnica previa.' },
+      { competencyId: 'TEAM_LEADERSHIP', score: 3.8, stage: 'B', comments: 'Mantiene soporte técnico al squad.' },
+      { competencyId: 'PROFESSIONAL_OPENNESS', score: 4.1, stage: 'C', comments: 'Analiza lecciones aprendidas con transparencia.' }
+    ],
+    kpis: [
+      { id: 'k70', kpi: 'Quality', weight: 35, targetValue: 4.0, currentValue: 3.8 },
+      { id: 'k71', kpi: 'Delivery', weight: 35, targetValue: 4.0, currentValue: 3.4 },
+      { id: 'k72', kpi: 'Customer Satisfaction', weight: 30, targetValue: 4.0, currentValue: 3.5 }
+    ]
+  },
+  {
+    id: 'CK025',
+    employeeId: 'E014',
+    projectId: 'PRJ003',
+    reviewerId: 'E008',
+    reviewDate: '2026-09-18',
+    reviewType: 'Quarterly',
+    comments: 'Q3 — Recuperación completa: retoma el liderazgo de demos con cliente y normaliza el 100% de las entregas planificadas.',
+    scores: [
+      { competencyId: 'CLIENT_ORIENTATION', score: 4.1, stage: 'C', comments: 'Recupera la confianza del cliente con seguimiento proactivo.' },
+      { competencyId: 'INNOVATION', score: 4.2, stage: 'C', comments: 'Automatiza alertas preventivas de calidad del dato.' },
+      { competencyId: 'HUMAN_RELATIONS', score: 4.0, stage: 'B', comments: 'Facilita acuerdos entre arquitectura y operación.' },
+      { competencyId: 'ORGANIZATION_RESULTS', score: 4.0, stage: 'B', comments: 'Vuelve a cumplir holgadamente hitos y SLA.' },
+      { competencyId: 'TEAM_LEADERSHIP', score: 3.9, stage: 'B', comments: 'Refuerza mentoría técnica en el equipo.' },
+      { competencyId: 'PROFESSIONAL_OPENNESS', score: 4.2, stage: 'C', comments: 'Aplica mejoras continuas en observabilidad.' }
+    ],
+    kpis: [
+      { id: 'k73', kpi: 'Quality', weight: 35, targetValue: 4.0, currentValue: 4.2 },
+      { id: 'k74', kpi: 'Delivery', weight: 35, targetValue: 4.0, currentValue: 4.1 },
+      { id: 'k75', kpi: 'Customer Satisfaction', weight: 30, targetValue: 4.0, currentValue: 4.1 }
+    ]
+  },
+  {
+    id: 'CK026',
+    employeeId: 'E014',
+    projectId: 'PRJ003',
+    reviewerId: 'E008',
+    reviewDate: '2026-11-18',
+    reviewType: 'Quarterly',
+    comments: 'Q4 — Cierre sobresaliente tras consolidar la recuperación de Q3, superando las metas de Nivel 2 (L3) en todas las competencias.',
+    scores: [
+      { competencyId: 'CLIENT_ORIENTATION', score: 4.2, stage: 'C', comments: 'Referente funcional para el equipo de negocio de Telefónica.' },
+      { competencyId: 'INNOVATION', score: 4.3, stage: 'C', comments: 'Reduce costes de cómputo Spark en un 32%.' },
+      { competencyId: 'HUMAN_RELATIONS', score: 4.1, stage: 'C', comments: 'Excelente cohesión y resolución constructiva.' },
+      { competencyId: 'ORGANIZATION_RESULTS', score: 4.2, stage: 'C', comments: 'Entregas estables y predecibles en todo el cierre.' },
+      { competencyId: 'TEAM_LEADERSHIP', score: 4.0, stage: 'B', comments: 'Coordina con solvencia a tres ingenieros.' },
+      { competencyId: 'PROFESSIONAL_OPENNESS', score: 4.3, stage: 'C', comments: 'Ponente en comunidad interna de Data Engineering.' }
+    ],
+    kpis: [
+      { id: 'k76', kpi: 'Quality', weight: 35, targetValue: 4.0, currentValue: 4.3 },
+      { id: 'k77', kpi: 'Delivery', weight: 35, targetValue: 4.0, currentValue: 4.2 },
+      { id: 'k78', kpi: 'Customer Satisfaction', weight: 30, targetValue: 4.0, currentValue: 4.3 }
+    ]
   }
 ];
 
@@ -1372,6 +1673,26 @@ export const INITIAL_DEVELOPMENT_PLANS: DevelopmentPlan[] = [
     status: 'Active',
     actions: [
       { id: 'DA011', type: 'Coaching', description: 'Plan intensivo de control de riesgos y gobernanza de entregas multi-squad', targetDate: '2027-03-31', status: 'InProgress' }
+    ]
+  },
+  {
+    id: 'DP007',
+    employeeId: 'E013',
+    year: 2026,
+    status: 'Active',
+    actions: [
+      { id: 'DA012', type: 'Training', description: 'Liderazgo Ágil, Gestión de Conflictos y Facilitación', targetDate: '2026-12-15', status: 'InProgress', trainingId: 'TR4' },
+      { id: 'DA013', type: 'Mentoring', description: 'Mentoría de estimación de sprints y comunicación con cliente junto a Hugo Serrano', targetDate: '2027-02-28', status: 'InProgress' }
+    ]
+  },
+  {
+    id: 'DP008',
+    employeeId: 'E014',
+    year: 2026,
+    status: 'Completed',
+    actions: [
+      { id: 'DA014', type: 'Training', description: 'Arquitectura Enterprise con Clean Architecture y DDD', targetDate: '2026-08-30', status: 'Completed', trainingId: 'TR1' },
+      { id: 'DA015', type: 'Certification', description: 'Certificación Oficial AWS Solutions Architect Associate', targetDate: '2026-10-30', status: 'Completed', trainingId: 'TR3' }
     ]
   }
 ];
@@ -1624,6 +1945,68 @@ export const INITIAL_ANNUAL_EVALUATIONS: AnnualEvaluation[] = [
       ready: false,
       reason: 'Nota global 2.60/5 (Por debajo de expectativas). Presenta brechas en todas las competencias exigidas para su nivel actual L5.'
     }
+  },
+  {
+    evaluationId: 'EV009',
+    employeeId: 'E013',
+    year: 2026,
+    currentLevelId: 'L2',
+    targetLevelId: 'L3',
+    status: 'Closed',
+    finalScore: 3.42,
+    evaluationResult: 'MeetsExpectations',
+    dimensions: [
+      { id: 'd41', dimension: 'Competencies', weight: 40, score: 3.5 },
+      { id: 'd42', dimension: 'ProjectPerformance', weight: 30, score: 3.4 },
+      { id: 'd43', dimension: 'Training', weight: 15, score: 3.5 },
+      { id: 'd44', dimension: 'Feedback360', weight: 10, score: 3.3 },
+      { id: 'd45', dimension: 'CorporateContribution', weight: 5, score: 3.2 }
+    ],
+    competencies: [
+      { id: 'c49', competencyId: 'CLIENT_ORIENTATION', expectedStage: 'B', actualStage: 'A', score: 3.0, gap: -1 },
+      { id: 'c50', competencyId: 'INNOVATION', expectedStage: 'B', actualStage: 'A', score: 3.5, gap: -1 },
+      { id: 'c51', competencyId: 'HUMAN_RELATIONS', expectedStage: 'A', actualStage: 'B', score: 3.7, gap: 1 },
+      { id: 'c52', competencyId: 'TEAM_LEADERSHIP', expectedStage: 'A', actualStage: 'A', score: 3.5, gap: 0 },
+      { id: 'c53', competencyId: 'ORGANIZATION_RESULTS', expectedStage: 'B', actualStage: 'A', score: 3.4, gap: -1 },
+      { id: 'c54', competencyId: 'PROFESSIONAL_OPENNESS', expectedStage: 'B', actualStage: 'B', score: 3.9, gap: 0 }
+    ],
+    commentsManager: 'Ciclo contrastado en Data & AI: Diego mostró una evolución muy positiva hasta Q2, pero los checkpoints de Q3 y Q4 registraron descensos relevantes en Orientación al Cliente, Organización e Innovación bajo mayor presión de alcance.',
+    commentsHR: 'Calibrado como Cumple Expectativas en L2 tras analizar las alertas de caída en Q3-Q4. Se mantiene en observación positiva con su plan de mentoría activo antes de optar a L3.',
+    promotionRecommendation: {
+      ready: false,
+      reason: 'Cierra el ciclo en 3.42/5 con alertas recientes de bajada en Orientación al Cliente (-0.8 acumulado desde Q2) e Innovación (-0.5). Debe recuperar estabilidad sostenida en Q1-Q2 2027 para optar a L3.'
+    }
+  },
+  {
+    evaluationId: 'EV010',
+    employeeId: 'E014',
+    year: 2026,
+    currentLevelId: 'L3',
+    targetLevelId: 'L4',
+    status: 'Closed',
+    finalScore: 4.18,
+    evaluationResult: 'ExceedsExpectations',
+    dimensions: [
+      { id: 'd46', dimension: 'Competencies', weight: 40, score: 4.2 },
+      { id: 'd47', dimension: 'ProjectPerformance', weight: 30, score: 4.3 },
+      { id: 'd48', dimension: 'Training', weight: 15, score: 4.2 },
+      { id: 'd49', dimension: 'Feedback360', weight: 10, score: 4.0 },
+      { id: 'd50', dimension: 'CorporateContribution', weight: 5, score: 4.0 }
+    ],
+    competencies: [
+      { id: 'c55', competencyId: 'CLIENT_ORIENTATION', expectedStage: 'B', actualStage: 'C', score: 4.2, gap: 1 },
+      { id: 'c56', competencyId: 'INNOVATION', expectedStage: 'B', actualStage: 'C', score: 4.3, gap: 1 },
+      { id: 'c57', competencyId: 'HUMAN_RELATIONS', expectedStage: 'A', actualStage: 'C', score: 4.1, gap: 2 },
+      { id: 'c58', competencyId: 'TEAM_LEADERSHIP', expectedStage: 'A', actualStage: 'B', score: 4.0, gap: 1 },
+      { id: 'c59', competencyId: 'ORGANIZATION_RESULTS', expectedStage: 'B', actualStage: 'C', score: 4.2, gap: 1 },
+      { id: 'c60', competencyId: 'PROFESSIONAL_OPENNESS', expectedStage: 'B', actualStage: 'C', score: 4.3, gap: 1 }
+    ],
+    commentsManager: 'Excelente capacidad de recuperación: tras un descenso puntual en Q2 en Orientación al Cliente y Organización, Clara revirtió por completo la tendencia en Q3 y cerró Q4 por encima del estándar de su nivel L3.',
+    commentsHR: 'Evaluación calibrada como Supera Expectativas (4.18/5). Se valora positivamente la recuperación sostenida en el segundo semestre y el cumplimiento de su PDP.',
+    promotionRecommendation: {
+      ready: false,
+      reason: 'Nota global 4.18/5 con recuperación completa tras el bache de Q2. Consolida L3 con margen y queda encaminada a L4 en el próximo ejercicio.'
+    }
   }
 ];
 
@@ -1743,6 +2126,8 @@ export class DatabaseStore {
         }
         await setDoc(doc(db, 'systemMeta', 'divisionBudgetsSeeded'), { seeded: true, seededAt: new Date().toISOString() });
         await setDoc(doc(db, 'systemMeta', 'dataAiDivisionSeeded'), { seeded: true, seededAt: new Date().toISOString() });
+        await setDoc(doc(db, 'systemMeta', 'dataAiDropExampleSeeded'), { seeded: true, seededAt: new Date().toISOString() });
+        await setDoc(doc(db, 'systemMeta', 'dataAiRecoveryAndPatriciaSeeded'), { seeded: true, seededAt: new Date().toISOString() });
         await setDoc(doc(db, 'systemMeta', 'highPotentialSampleSeeded'), { seeded: true, seededAt: new Date().toISOString() });
         console.log('[Firestore] Data seeding completed.');
       } else {
@@ -1819,6 +2204,58 @@ export class DatabaseStore {
             await updateDoc(e008Ref, { recognitions: ['high_potential'] });
           }
           await setDoc(hpMetaRef, { seeded: true, seededAt: new Date().toISOString() });
+        }
+
+        // Idempotent seed for Data & AI full-cycle competency drop example (E013, CK017-CK020, DP007, EV009)
+        const dropExampleMetaRef = doc(db, 'systemMeta', 'dataAiDropExampleSeeded');
+        const dropExampleMetaSnap = await getDoc(dropExampleMetaRef);
+        if (!dropExampleMetaSnap.exists()) {
+          await this.ensureRecordExists('employees', 'E013', INITIAL_EMPLOYEES.find(e => e.employeeId === 'E013'));
+          for (const ckId of ['CK017', 'CK018', 'CK019', 'CK020']) {
+            await this.ensureRecordExists('checkpoints', ckId, INITIAL_CHECKPOINTS.find(c => c.id === ckId));
+          }
+          await this.ensureRecordExists('devPlans', 'DP007', INITIAL_DEVELOPMENT_PLANS.find(d => d.id === 'DP007'));
+          await this.ensureRecordExists('annualEvaluations', 'EV009', INITIAL_ANNUAL_EVALUATIONS.find(ev => ev.evaluationId === 'EV009'));
+          await setDoc(dropExampleMetaRef, { seeded: true, seededAt: new Date().toISOString() });
+        }
+
+        // Idempotent seed for Patricia Morales 2 extra checkpoints (CK021-CK022) and E014 recovery example (CK023-CK026, DP008, EV010)
+        const recoveryMetaRef = doc(db, 'systemMeta', 'dataAiRecoveryAndPatriciaSeeded');
+        const recoveryMetaSnap = await getDoc(recoveryMetaRef);
+        if (!recoveryMetaSnap.exists()) {
+          await this.ensureRecordExists('employees', 'E014', INITIAL_EMPLOYEES.find(e => e.employeeId === 'E014'));
+          for (const ckId of ['CK021', 'CK022', 'CK023', 'CK024', 'CK025', 'CK026']) {
+            await this.ensureRecordExists('checkpoints', ckId, INITIAL_CHECKPOINTS.find(c => c.id === ckId));
+          }
+          await this.ensureRecordExists('devPlans', 'DP008', INITIAL_DEVELOPMENT_PLANS.find(d => d.id === 'DP008'));
+          await this.ensureRecordExists('annualEvaluations', 'EV010', INITIAL_ANNUAL_EVALUATIONS.find(ev => ev.evaluationId === 'EV010'));
+          await setDoc(recoveryMetaRef, { seeded: true, seededAt: new Date().toISOString() });
+        }
+
+        // Ensure all existing roleRequests have a valid criticality field
+        const seededReqById = new Map(INITIAL_ROLE_REQUESTS.map(r => [r.id, r]));
+        const allReqSnap = await getDocs(collection(db, 'roleRequests'));
+        for (const reqDoc of allReqSnap.docs) {
+          const data = reqDoc.data();
+          if (!data?.criticality) {
+            const seedReq = seededReqById.get(reqDoc.id);
+            await updateDoc(doc(db, 'roleRequests', reqDoc.id), {
+              criticality: seedReq?.criticality || 'Medium'
+            });
+          }
+        }
+
+        // Ensure all existing projects have an assigned division
+        const seededPrjById = new Map(INITIAL_PROJECTS.map(p => [p.projectId, p]));
+        const allPrjSnap = await getDocs(collection(db, 'projects'));
+        for (const prjDoc of allPrjSnap.docs) {
+          const data = prjDoc.data();
+          if (!data?.division) {
+            const seedPrj = seededPrjById.get(prjDoc.id);
+            await updateDoc(doc(db, 'projects', prjDoc.id), {
+              division: seedPrj?.division || 'Software Engineering'
+            });
+          }
         }
       }
     } catch (err) {
@@ -2202,11 +2639,38 @@ export class DatabaseStore {
 
   // Matching Engine calculation
   async getMatchingResults(requestId: string) {
-    const roleReqs = await this.getRoleRequests();
+    const [roleReqs, projects, emps, annualEvals, checkpoints] = await Promise.all([
+      this.getRoleRequests(),
+      this.getProjects(),
+      this.getEmployees(),
+      this.getAnnualEvaluations(),
+      this.getCheckpoints()
+    ]);
+
     const req = roleReqs.find(r => r.id === requestId);
     if (!req) return [];
 
-    const emps = await this.getEmployees();
+    const project = projects.find(p => p.projectId === req.projectId);
+    const projectDivision = (project?.division || '').trim();
+
+    const reqCriticality: RoleCriticality =
+      req.criticality && ['Low', 'Medium', 'High', 'Critical'].includes(req.criticality)
+        ? req.criticality
+        : 'Medium';
+
+    const stageRankMap: Record<CompetencyStage, number> = {
+      A: 1,
+      B: 2,
+      C: 3,
+      D: 4,
+      E: 5
+    };
+    const AUTONOMY_COMPETENCIES = new Set([
+      'ORGANIZATION_RESULTS',
+      'CLIENT_ORIENTATION',
+      'TEAM_LEADERSHIP',
+      'INNOVATION'
+    ]);
 
     return emps.map(emp => {
       // 1. Skill Match Score: fraction of requiredSkills present in employee skills
@@ -2225,12 +2689,11 @@ export class DatabaseStore {
         skillScore = 100;
       }
 
-      // 2. Level Score: matches target level L1-L6
-      // Let's parse L1 -> 1, L2 -> 2, etc.
+      // 2. Level Score: matches target level L1-L7
       const getNum = (lid: string) => parseInt(lid.replace('L', '')) || 1;
       const reqNum = getNum(req.requiredLevelId);
       const empNum = getNum(emp.currentLevelId);
-      
+
       let levelScore = 100;
       if (empNum < reqNum) {
         // under-qualified
@@ -2245,11 +2708,10 @@ export class DatabaseStore {
       if (emp.availabilityPercent >= req.allocation) {
         availabilityScore = 100;
       } else {
-        // partial score proportional to available %
         availabilityScore = Math.round((emp.availabilityPercent / req.allocation) * 100);
       }
 
-      // 4. Performance Score: based on history
+      // 4. Performance Score: based on project history
       let performanceScore = 80; // default average
       if (emp.projectHistory.length > 0) {
         const sum = emp.projectHistory.reduce((acc, curr) => acc + curr.performance, 0);
@@ -2257,7 +2719,168 @@ export class DatabaseStore {
         performanceScore = Math.round((avg / 5) * 100);
       }
 
-      const globalScore = Math.round((skillScore * 0.40) + (levelScore * 0.20) + (availabilityScore * 0.25) + (performanceScore * 0.15));
+      // 5. Criticality Fit Score: Alto Potencial / Key Person + Annual Evaluation + Detected Autonomy/Independence
+      const empRecognitions = Array.isArray(emp.recognitions) ? emp.recognitions : [];
+      const hasHighPotential = empRecognitions.includes('high_potential');
+      const hasKeyPerson = empRecognitions.includes('key_person');
+
+      const empEvals = annualEvals
+        .filter(ev => ev.employeeId === emp.employeeId)
+        .sort((a, b) => b.year - a.year);
+      const latestEval = empEvals[0] || null;
+
+      const empCheckpoints = sortCheckpointsChronological(
+        checkpoints.filter(c => c.employeeId === emp.employeeId)
+      );
+      const latestCheckpoint = empCheckpoints[empCheckpoints.length - 1] || null;
+      const unrecoveredDrops = getGlobalUnrecoveredCompetencyDrops(empCheckpoints);
+
+      // 5a. Autonomy & Independence score (0-100)
+      const autonomyNumericScores: number[] = [];
+      const autonomyStageRanks: number[] = [];
+
+      if (latestEval?.competencies?.length) {
+        for (const comp of latestEval.competencies) {
+          if (AUTONOMY_COMPETENCIES.has(comp.competencyId)) {
+            if (typeof comp.score === 'number') autonomyNumericScores.push(comp.score);
+            if (comp.actualStage && stageRankMap[comp.actualStage]) {
+              autonomyStageRanks.push(stageRankMap[comp.actualStage]);
+            }
+          }
+        }
+      }
+
+      if (latestCheckpoint?.scores?.length) {
+        for (const cs of latestCheckpoint.scores) {
+          if (AUTONOMY_COMPETENCIES.has(cs.competencyId)) {
+            if (typeof cs.score === 'number') autonomyNumericScores.push(cs.score);
+            if (cs.stage && stageRankMap[cs.stage]) {
+              autonomyStageRanks.push(stageRankMap[cs.stage]);
+            }
+          }
+        }
+      }
+
+      let autonomyScore = 55;
+      if (autonomyNumericScores.length > 0) {
+        const avgAuto =
+          autonomyNumericScores.reduce((acc, s) => acc + s, 0) / autonomyNumericScores.length;
+        const scorePart = (avgAuto / 5) * 70;
+        const avgStage =
+          autonomyStageRanks.length > 0
+            ? autonomyStageRanks.reduce((acc, r) => acc + r, 0) / autonomyStageRanks.length
+            : Math.min(5, Math.max(1, avgAuto));
+        const stagePart = ((avgStage - 1) / 4) * 30;
+        autonomyScore = Math.max(0, Math.min(100, Math.round(scorePart + stagePart)));
+      } else {
+        const levelBase = Math.min(92, 22 + empNum * 13);
+        const histFactor = performanceScore >= 85 ? 6 : performanceScore <= 60 ? -8 : 0;
+        autonomyScore = Math.max(0, Math.min(100, levelBase + histFactor));
+      }
+
+      // 5b. Evaluation Readiness points (0-45)
+      let evalPoints = (performanceScore / 100) * 28;
+      if (latestEval) {
+        evalPoints = (latestEval.finalScore / 5) * 35;
+        if (latestEval.evaluationResult === 'Promoted') evalPoints += 10;
+        else if (latestEval.evaluationResult === 'Outstanding') evalPoints += 9;
+        else if (latestEval.evaluationResult === 'ExceedsExpectations') evalPoints += 6;
+        else if (latestEval.evaluationResult === 'MeetsExpectations') evalPoints += 1;
+        else if (latestEval.evaluationResult === 'Unsatisfactory') evalPoints -= 12;
+
+        if (latestEval.promotionRecommendation?.ready) {
+          evalPoints += 4;
+        }
+        evalPoints = Math.max(0, Math.min(45, evalPoints));
+      }
+
+      // 5c. Autonomy points (0-30)
+      const autonomyPoints = (autonomyScore / 100) * 30;
+
+      // 5d. Talent recognition boost (Alto Potencial & Key person parity) (0-28)
+      let recognitionPoints = 0;
+      if (hasHighPotential && hasKeyPerson) {
+        recognitionPoints = 28;
+      } else if (hasHighPotential || hasKeyPerson) {
+        recognitionPoints = 25;
+      }
+
+      // 5e. Active unrecovered drop penalty for reliability on critical positions
+      const dropPenalty = unrecoveredDrops.length > 0 ? Math.min(10, unrecoveredDrops.length * 4) : 0;
+
+      const criticalityFitScore = Math.max(
+        0,
+        Math.min(100, Math.round(evalPoints + autonomyPoints + recognitionPoints - dropPenalty))
+      );
+
+      // Signals explaining why candidate fits (or lacks fit) for critical roles
+      const criticalitySignals: string[] = [];
+      if (hasHighPotential) criticalitySignals.push('Alto Potencial');
+      if (hasKeyPerson) criticalitySignals.push('Key person');
+      if (latestEval) {
+        if (latestEval.finalScore >= 4.0) {
+          criticalitySignals.push(`Eval. ${latestEval.finalScore.toFixed(1)}/5`);
+        } else if (latestEval.finalScore < 3.0) {
+          criticalitySignals.push(`Eval. ajustada (${latestEval.finalScore.toFixed(1)}/5)`);
+        }
+      }
+      if (autonomyScore >= 72) {
+        criticalitySignals.push('Alta autonomía');
+      }
+      if (latestEval?.promotionRecommendation?.ready) {
+        criticalitySignals.push('Listo promoción');
+      }
+
+      // 6. Global Score weighted by request criticality + modest same-division priority
+      let baseGlobalScore = 0;
+      if (reqCriticality === 'Low') {
+        baseGlobalScore = Math.round(
+          skillScore * 0.40 +
+          levelScore * 0.20 +
+          availabilityScore * 0.25 +
+          performanceScore * 0.15
+        );
+      } else if (reqCriticality === 'Medium') {
+        baseGlobalScore = Math.round(
+          skillScore * 0.38 +
+          levelScore * 0.19 +
+          availabilityScore * 0.23 +
+          performanceScore * 0.12 +
+          criticalityFitScore * 0.08
+        );
+      } else if (reqCriticality === 'High') {
+        baseGlobalScore = Math.round(
+          skillScore * 0.31 +
+          levelScore * 0.16 +
+          availabilityScore * 0.18 +
+          performanceScore * 0.10 +
+          criticalityFitScore * 0.25
+        );
+      } else {
+        // Critical
+        baseGlobalScore = Math.round(
+          skillScore * 0.26 +
+          levelScore * 0.14 +
+          availabilityScore * 0.15 +
+          performanceScore * 0.08 +
+          criticalityFitScore * 0.37
+        );
+      }
+
+      // 7. Division alignment: modest priority (+6 pts) for collaborators in the project's division
+      const candidateDivision = (emp.division || emp.department || '').trim();
+      const sameDivision =
+        !projectDivision ||
+        candidateDivision.toLowerCase() === projectDivision.toLowerCase();
+      const divisionBonus = projectDivision && sameDivision ? 6 : 0;
+      const globalScore = Math.max(0, Math.min(100, baseGlobalScore + divisionBonus));
+
+      // Flag good matches that belong to a different division
+      const crossDivisionGoodMatch = Boolean(
+        projectDivision &&
+          !sameDivision &&
+          (globalScore >= 55 || skillScore >= 65)
+      );
 
       return {
         id: `M_${req.id}_${emp.employeeId}`,
@@ -2267,10 +2890,30 @@ export class DatabaseStore {
         levelScore,
         availabilityScore,
         performanceScore,
+        criticalityFitScore,
+        autonomyScore,
+        evaluationScore: latestEval ? latestEval.finalScore : null,
+        criticalitySignals,
+        requestCriticality: reqCriticality,
+        sameDivision,
+        projectDivision,
+        candidateDivision,
+        crossDivisionGoodMatch,
         globalScore,
         employee: emp
       };
-    }).sort((a, b) => b.globalScore - a.globalScore);
+    }).sort((a, b) => {
+      if (b.globalScore !== a.globalScore) {
+        return b.globalScore - a.globalScore;
+      }
+      if (a.sameDivision !== b.sameDivision) {
+        return a.sameDivision ? -1 : 1;
+      }
+      if (reqCriticality === 'High' || reqCriticality === 'Critical') {
+        return b.criticalityFitScore - a.criticalityFitScore;
+      }
+      return b.skillScore - a.skillScore;
+    });
   }
 }
 

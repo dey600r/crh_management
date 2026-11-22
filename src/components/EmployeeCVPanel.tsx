@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
-import { Award, Briefcase, GraduationCap, Globe, Mail, MapPin, Star, User, X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Award, Briefcase, Check, ChevronDown, GraduationCap, Globe, Mail, MapPin, Star, User, X } from 'lucide-react';
 import { Employee, Project, RecognitionDefinition, RecognitionTagId, TALENT_RECOGNITIONS } from '../types';
-import EmployeeRecognitionIcons from './EmployeeRecognitionIcons';
+import EmployeeRecognitionIcons, { renderRecognitionIcon } from './EmployeeRecognitionIcons';
 
 interface EmployeeCVPanelProps {
   employee: Employee;
@@ -26,12 +26,36 @@ export default function EmployeeCVPanel({
   onToggleRecognition,
   onClose
 }: EmployeeCVPanelProps) {
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement | null>(null);
   const [pendingConfirmation, setPendingConfirmation] = useState<{
     def: RecognitionDefinition;
     nextActive: boolean;
   } | null>(null);
   const [isSavingRecognition, setIsSavingRecognition] = useState(false);
   const [recognitionError, setRecognitionError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setIsDropdownOpen(false);
+  }, [employee.employeeId]);
+
+  useEffect(() => {
+    if (!isDropdownOpen) return;
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setIsDropdownOpen(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsDropdownOpen(false);
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isDropdownOpen]);
 
   useEffect(() => {
     if (!pendingConfirmation) return;
@@ -136,35 +160,96 @@ export default function EmployeeCVPanel({
               {availabilityLabel} ({employee.availabilityPercent}%)
             </div>
           </div>
-          {canManageRecognitions && onToggleRecognition && (
-            <div className="flex flex-wrap items-center justify-end gap-1.5 pt-0.5">
-              {TALENT_RECOGNITIONS.map(def => {
-                const isActive = activeRecognitions.includes(def.id);
-                return (
-                  <button
-                    key={def.id}
-                    type="button"
-                    onClick={() => {
-                      setRecognitionError(null);
-                      setPendingConfirmation({ def, nextActive: !isActive });
-                    }}
-                    className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-md border transition-colors whitespace-nowrap shrink-0 ${
-                      isActive
-                        ? 'bg-amber-50 border-amber-300 text-amber-800 hover:bg-amber-100/80'
-                        : 'bg-white border-slate-200 text-slate-700 hover:border-amber-300 hover:bg-amber-50/40'
+          {canManageRecognitions && onToggleRecognition && (() => {
+            const activeDefs = TALENT_RECOGNITIONS.filter(def => activeRecognitions.includes(def.id));
+            const buttonLabel =
+              activeDefs.length === 0
+                ? 'Distintivos'
+                : activeDefs.length <= 2
+                ? activeDefs.map(d => d.label).join(' · ')
+                : `Distintivos (${activeDefs.length})`;
+
+            return (
+              <div ref={dropdownRef} className="relative pt-0.5">
+                <button
+                  type="button"
+                  aria-haspopup="menu"
+                  aria-expanded={isDropdownOpen}
+                  onClick={() => setIsDropdownOpen(prev => !prev)}
+                  className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-md border transition-colors whitespace-nowrap shrink-0 ${
+                    activeDefs.length > 0
+                      ? 'bg-amber-50 border-amber-300 text-amber-900 hover:bg-amber-100/80'
+                      : 'bg-white border-slate-200 text-slate-700 hover:border-amber-300 hover:bg-amber-50/40'
+                  }`}
+                >
+                  {activeDefs.length > 0 ? (
+                    <span className="inline-flex items-center gap-1 shrink-0">
+                      {activeDefs.map(def => (
+                        <span key={def.id} className="inline-flex items-center">
+                          {renderRecognitionIcon(def.id, 'h-3.5 w-3.5', true)}
+                        </span>
+                      ))}
+                    </span>
+                  ) : (
+                    <Star className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                  )}
+                  <span>{buttonLabel}</span>
+                  <ChevronDown
+                    className={`h-3.5 w-3.5 text-slate-400 transition-transform shrink-0 ${
+                      isDropdownOpen ? 'rotate-180' : ''
                     }`}
+                  />
+                </button>
+
+                {isDropdownOpen && (
+                  <div
+                    role="menu"
+                    aria-label="Seleccionar distintivo de talento"
+                    className="absolute right-0 mt-1.5 w-56 bg-white border border-slate-200 rounded-xl shadow-lg py-1.5 z-30"
                   >
-                    <Star
-                      className={`h-3.5 w-3.5 shrink-0 ${
-                        isActive ? 'text-amber-600/80 fill-amber-300/65' : 'text-slate-400'
-                      }`}
-                    />
-                    {def.label}
-                  </button>
-                );
-              })}
-            </div>
-          )}
+                    <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                      Distintivos de talento
+                    </div>
+                    {TALENT_RECOGNITIONS.map(def => {
+                      const isActive = activeRecognitions.includes(def.id);
+                      return (
+                        <button
+                          key={def.id}
+                          type="button"
+                          role="menuitemcheckbox"
+                          aria-checked={isActive}
+                          onClick={() => {
+                            setIsDropdownOpen(false);
+                            setRecognitionError(null);
+                            setPendingConfirmation({ def, nextActive: !isActive });
+                          }}
+                          className={`w-full px-3 py-2 text-left text-xs flex items-center justify-between gap-2 transition-colors ${
+                            isActive
+                              ? 'bg-amber-50/70 text-slate-900 font-semibold hover:bg-amber-50'
+                              : 'text-slate-700 hover:bg-slate-50 font-medium'
+                          }`}
+                        >
+                          <span className="inline-flex items-center gap-2 min-w-0">
+                            {renderRecognitionIcon(def.id, 'h-3.5 w-3.5', isActive)}
+                            <span className="truncate">{def.label}</span>
+                          </span>
+                          <span
+                            className={`inline-flex items-center justify-center w-4 h-4 rounded border shrink-0 ${
+                              isActive
+                                ? 'bg-amber-600 border-amber-600 text-white'
+                                : 'border-slate-300 bg-white'
+                            }`}
+                          >
+                            {isActive && <Check className="h-3 w-3" />}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
           {onClose && (
             <button
               type="button"
@@ -339,13 +424,11 @@ export default function EmployeeCVPanel({
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 rounded-lg bg-amber-50 border border-amber-200 shrink-0">
-                  <Star
-                    className={`h-4 w-4 ${
-                      pendingConfirmation.nextActive
-                        ? 'text-amber-600/80 fill-amber-300/65'
-                        : 'text-slate-500'
-                    }`}
-                  />
+                  {renderRecognitionIcon(
+                    pendingConfirmation.def.id,
+                    'h-4 w-4',
+                    pendingConfirmation.nextActive
+                  )}
                 </div>
                 <div>
                   <h4 id="recognition-confirm-title" className="text-sm font-bold text-slate-900">

@@ -15,6 +15,7 @@ export interface SalaryRaiseAllocationItem {
   evaluationResult: AnnualEvaluation['evaluationResult'];
   isPromoted: boolean;
   isHighPotential: boolean;
+  isKeyPerson: boolean;
   weight: number;
   sharePercent: number;
   recommendedRaiseEur: number;
@@ -40,6 +41,7 @@ export interface DivisionSalaryRecommendation {
   unallocatedRemainderEur: number;
   promotedCount: number;
   highPotentialCount: number;
+  keyPersonCount: number;
   items: SalaryRaiseAllocationItem[];
 }
 
@@ -178,11 +180,12 @@ export function computeDivisionSalaryRecommendationByName(
       unallocatedRemainderEur: budgetEur !== null ? Number(budgetEur.toFixed(2)) : 0,
       promotedCount: 0,
       highPotentialCount: 0,
+      keyPersonCount: 0,
       items: []
     };
   }
 
-  // Compute weights factoring in final score, result tier, promotion, High Potential, and mild salary scale
+  // Compute weights factoring in final score, result tier, promotion, High Potential / Key person, and mild salary scale
   const scoredRows = divisionEmployees.map(emp => {
     const ev = evalByEmployee.get(emp.employeeId)!;
     const score = Number(ev.finalScore) || 0;
@@ -192,14 +195,17 @@ export function computeDivisionSalaryRecommendationByName(
       Boolean(ev.promotionRecommendation?.ready) || ev.evaluationResult === 'Promoted';
     const isHighPotential =
       Array.isArray(emp.recognitions) && emp.recognitions.includes('high_potential');
-    const minUnits = isPromoted || isHighPotential ? 1 : 0;
+    const isKeyPerson =
+      Array.isArray(emp.recognitions) && emp.recognitions.includes('key_person');
+    const hasPriorityRecognition = isHighPotential || isKeyPerson;
+    const minUnits = isPromoted || hasPriorityRecognition ? 1 : 0;
 
     let weight = 0;
     let rationale = '';
 
-    if (score < 3.0 && !isPromoted && !isHighPotential) {
+    if (score < 3.0 && !isPromoted && !hasPriorityRecognition) {
       weight = 0;
-      rationale = 'Nota < 3,0 sin promoción ni Alto Potencial';
+      rationale = 'Nota < 3,0 sin promoción, Alto Potencial ni Key person';
     } else {
       const scoreComponent = Math.max(0.5, score - 2.2);
       const resultMult = getResultMultiplier(ev.evaluationResult);
@@ -209,18 +215,25 @@ export function computeDivisionSalaryRecommendationByName(
         weight = scoreComponent * resultMult;
       }
 
-      if (isHighPotential) {
+      if (hasPriorityRecognition) {
         weight *= HIGH_POTENTIAL_WEIGHT_MULTIPLIER;
       }
 
       weight *= salaryFactor;
 
-      if (isPromoted && isHighPotential) {
-        rationale = 'Promoción + Alto Potencial (subida mínima garantizada)';
+      const recognitionLabels = [
+        isHighPotential ? 'Alto Potencial' : null,
+        isKeyPerson ? 'Key person' : null
+      ]
+        .filter(Boolean)
+        .join(' + ');
+
+      if (isPromoted && recognitionLabels) {
+        rationale = `Promoción + ${recognitionLabels} (subida mínima garantizada)`;
       } else if (isPromoted) {
         rationale = 'Promoción (subida obligatoria) + desempeño';
-      } else if (isHighPotential) {
-        rationale = 'Alto Potencial (subida mínima garantizada) + desempeño';
+      } else if (recognitionLabels) {
+        rationale = `${recognitionLabels} (subida mínima garantizada) + desempeño`;
       } else {
         rationale =
           ev.evaluationResult === 'Outstanding'
@@ -239,6 +252,8 @@ export function computeDivisionSalaryRecommendationByName(
       evaluationResult: ev.evaluationResult,
       isPromoted,
       isHighPotential,
+      isKeyPerson,
+      hasPriorityRecognition,
       minUnits,
       weight,
       rationale
@@ -247,6 +262,7 @@ export function computeDivisionSalaryRecommendationByName(
 
   const promotedCount = scoredRows.filter(r => r.isPromoted).length;
   const highPotentialCount = scoredRows.filter(r => r.isHighPotential).length;
+  const keyPersonCount = scoredRows.filter(r => r.isKeyPerson).length;
   let totalWeight = scoredRows.reduce((sum, r) => sum + r.weight, 0);
 
   // Fallback if all employees scored < 3.0 without promotion/high potential while budget >= 500 EUR
@@ -269,7 +285,7 @@ export function computeDivisionSalaryRecommendationByName(
     .sort(
       (a, b) =>
         Number(b.r.isPromoted) - Number(a.r.isPromoted) ||
-        Number(b.r.isHighPotential) - Number(a.r.isHighPotential) ||
+        Number(b.r.hasPriorityRecognition) - Number(a.r.hasPriorityRecognition) ||
         b.r.weight - a.r.weight ||
         b.r.finalScore - a.r.finalScore
     );
@@ -377,6 +393,7 @@ export function computeDivisionSalaryRecommendationByName(
         evaluationResult: row.evaluationResult,
         isPromoted: row.isPromoted,
         isHighPotential: row.isHighPotential,
+        isKeyPerson: row.isKeyPerson,
         weight: row.weight,
         sharePercent,
         recommendedRaiseEur: raiseEur,
@@ -398,6 +415,7 @@ export function computeDivisionSalaryRecommendationByName(
     unallocatedRemainderEur,
     promotedCount,
     highPotentialCount,
+    keyPersonCount,
     items
   };
 }

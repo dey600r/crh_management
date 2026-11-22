@@ -65,14 +65,16 @@ service cloud.firestore {
     function isValidProject(data) {
       return isNonEmptyString(data.projectId, 128)
         && isNonEmptyString(data.projectName, 300)
-        && isNonEmptyString(data.status, 64);
+        && isNonEmptyString(data.status, 64)
+        && (!('division' in data) || isNonEmptyString(data.division, 200));
     }
 
     function isValidRoleRequest(data) {
       return isNonEmptyString(data.id, 128)
         && isNonEmptyString(data.projectId, 128)
         && isNonEmptyString(data.careerPathId, 128)
-        && isNonEmptyString(data.requiredLevelId, 64);
+        && isNonEmptyString(data.requiredLevelId, 64)
+        && (!('criticality' in data) || (data.criticality is string && data.criticality in ['Low', 'Medium', 'High', 'Critical']));
     }
 
     function isValidAssignment(data) {

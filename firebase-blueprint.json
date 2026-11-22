@@ -113,6 +113,7 @@
         "clientName": { "type": "string" },
         "projectName": { "type": "string" },
         "businessUnit": { "type": "string" },
+        "division": { "type": "string", "description": "División corporativa asignada al proyecto" },
         "status": { "type": "string" },
         "startDate": { "type": "string" },
         "endDate": { "type": "string" },
@@ -133,7 +134,12 @@
         "requiredSkills": { "type": "array" },
         "startDate": { "type": "string" },
         "allocation": { "type": "number" },
-        "priority": { "type": "string" }
+        "priority": { "type": "string" },
+        "criticality": {
+          "type": "string",
+          "enum": ["Low", "Medium", "High", "Critical"],
+          "description": "Nivel de criticidad del puesto para priorizar talento y autonomía en matching"
+        }
       },
       "required": ["id", "projectId", "careerPathId", "requiredLevelId"]
     },

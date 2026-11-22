@@ -1,7 +1,14 @@
 import { useState } from 'react';
-import { Activity, TrendingUp } from 'lucide-react';
+import { Activity, AlertTriangle, TrendingUp } from 'lucide-react';
 import { CheckpointReview, getRequiredStage } from '../types';
 import TruncatedTooltip from './TruncatedTooltip';
+import {
+  computeCompetencyScoreDrops,
+  getGlobalUnrecoveredCompetencyDrops,
+  groupDropsByCheckpoint,
+  indexDropsByCheckpointAndCompetency,
+  sortCheckpointsChronological
+} from '../utils/checkpointAlerts';
 
 interface CheckpointProgressChartProps {
   checkpoints: CheckpointReview[];
@@ -34,13 +41,17 @@ export default function CheckpointProgressChart({
   const [selectedCompId, setSelectedCompId] = useState<string | null>(null);
 
   // Chronological order (oldest -> newest) for left-to-right progression
-  const sortedChronological = [...checkpoints].sort(
-    (a, b) => new Date(a.reviewDate).getTime() - new Date(b.reviewDate).getTime()
-  );
+  const sortedChronological = sortCheckpointsChronological(checkpoints);
 
   if (sortedChronological.length <= 1) {
     return null;
   }
+
+  const scoreDrops = computeCompetencyScoreDrops(sortedChronological);
+  const unrecoveredDrops = getGlobalUnrecoveredCompetencyDrops(sortedChronological);
+  const dropsByCheckpoint = groupDropsByCheckpoint(scoreDrops);
+  const dropByCpAndComp = indexDropsByCheckpointAndCompetency(scoreDrops);
+  const compIdsWithActiveDrop = new Set(unrecoveredDrops.map(d => d.competencyId));
 
   // Compute achieved average (competencies only, 1-5 scale) per checkpoint
   const points = sortedChronological.map((cp, idx) => {
@@ -227,6 +238,54 @@ export default function CheckpointProgressChart({
         </div>
       </div>
 
+      {/* Competency Score Drop Alert Strip (one global entry per unrecovered competency) */}
+      {unrecoveredDrops.length > 0 && (
+        <div
+          role="alert"
+          className="bg-rose-50 border border-rose-200 rounded-lg px-3 py-2 text-xs text-rose-900 space-y-1.5"
+        >
+          <div className="flex items-center gap-1.5 font-bold text-rose-800">
+            <AlertTriangle className="h-3.5 w-3.5 text-rose-600 shrink-0" />
+            <span>
+              Alerta: descenso global en {unrecoveredDrops.length}{' '}
+              {unrecoveredDrops.length === 1 ? 'competencia' : 'competencias'}
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {unrecoveredDrops.map(drop => {
+              const compName =
+                compMetaList.find(c => c.id === drop.competencyId)?.name || drop.competencyId;
+              const isSelectedComp =
+                chartMode === 'competencies' && selectedCompId === drop.competencyId;
+              return (
+                <button
+                  key={drop.competencyId}
+                  type="button"
+                  onClick={() => {
+                    setChartMode('competencies');
+                    setSelectedCompId(drop.competencyId);
+                  }}
+                  title={`Ver ${compName} en gráfica (${drop.previousReviewDate} → ${drop.reviewDate})`}
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium border transition-colors ${
+                    isSelectedComp
+                      ? 'bg-rose-600 text-white border-rose-600'
+                      : 'bg-white text-rose-800 border-rose-200 hover:bg-rose-100'
+                  }`}
+                >
+                  <span>{compName}:</span>
+                  <span className="font-mono font-bold tabular-nums">
+                    {drop.previousScore.toFixed(1)} → {drop.currentScore.toFixed(1)}
+                  </span>
+                  <span className="font-mono text-[10px] opacity-85">
+                    ({drop.delta.toFixed(1)})
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* SVG Plot */}
       <div className="w-full overflow-x-auto">
         <svg
@@ -395,7 +454,8 @@ export default function CheckpointProgressChart({
                 x: xForIndex(i),
                 y: yForValue(pt.avgAchieved),
                 val: pt.avgAchieved,
-                idx: i
+                idx: i,
+                drops: dropsByCheckpoint.get(pt.cp.id) || []
               }));
 
               const linePath = coords
@@ -414,6 +474,16 @@ export default function CheckpointProgressChart({
                   />
                   {coords.map((c) => {
                     const isHovered = hoveredIdx === c.idx;
+                    const hasDrop = c.drops.length > 0;
+                    const dropSummary = hasDrop
+                      ? c.drops
+                          .map(d => {
+                            const cName =
+                              compMetaList.find(m => m.id === d.competencyId)?.name || d.competencyId;
+                            return `${cName}: ${d.previousScore.toFixed(1)} → ${d.currentScore.toFixed(1)}${d.recovered ? ' (recuperado)' : ''}`;
+                          })
+                          .join(' | ')
+                      : '';
                     return (
                       <g
                         key={`media-pt-${c.idx}`}
@@ -421,19 +491,45 @@ export default function CheckpointProgressChart({
                         onMouseLeave={() => setHoveredIdx(null)}
                         className="cursor-pointer"
                       >
+                        {hasDrop && (
+                          <title>{`Descenso en checkpoint: ${dropSummary}`}</title>
+                        )}
+                        {hasDrop && (
+                          <circle
+                            cx={c.x}
+                            cy={c.y}
+                            r={isHovered ? 8.5 : 7}
+                            fill="none"
+                            stroke="#e11d48"
+                            strokeWidth={1.5}
+                            strokeDasharray="2.5 2"
+                          />
+                        )}
                         <circle
                           cx={c.x}
                           cy={c.y}
                           r={isHovered ? 5.5 : 4}
                           fill="#ffffff"
-                          stroke="#4f46e5"
+                          stroke={hasDrop ? '#e11d48' : '#4f46e5'}
                           strokeWidth={2.5}
                         />
+                        {hasDrop && (
+                          <circle
+                            cx={c.x + 6}
+                            cy={c.y - 6}
+                            r={3}
+                            fill="#e11d48"
+                            stroke="#ffffff"
+                            strokeWidth={1}
+                          />
+                        )}
                         <text
                           x={c.x}
-                          y={c.y - 9}
+                          y={c.y - 10}
                           textAnchor="middle"
-                          className="fill-indigo-700 text-[10px] font-mono font-bold"
+                          className={`text-[10px] font-mono font-bold ${
+                            hasDrop ? 'fill-rose-700' : 'fill-indigo-700'
+                          }`}
                         >
                           {c.val.toFixed(2)}
                         </text>
@@ -454,10 +550,12 @@ export default function CheckpointProgressChart({
                   const scoreItem = pt.cp.scores?.find(s => s.competencyId === compMeta.id);
                   if (!scoreItem) return null;
                   return {
+                    checkpointId: pt.cp.id,
                     x: xForIndex(i),
                     y: yForValue(scoreItem.score),
                     score: scoreItem.score,
-                    idx: i
+                    idx: i,
+                    drop: dropByCpAndComp.get(`${pt.cp.id}::${compMeta.id}`) || null
                   };
                 })
                 .filter((c): c is NonNullable<typeof c> => c !== null);
@@ -480,25 +578,41 @@ export default function CheckpointProgressChart({
                   />
                   {coords.map((c) => {
                     const showPointValue = isHighlighted || hoveredIdx === c.idx;
+                    const hasDrop = Boolean(c.drop);
                     return (
                       <g key={`${compMeta.id}-${c.idx}`}>
+                        {c.drop && (
+                          <title>
+                            {`Descenso en ${compMeta.name}: ${c.drop.previousScore.toFixed(1)} → ${c.drop.currentScore.toFixed(1)} (${c.drop.delta.toFixed(1)})${c.drop.recovered ? ` · Recuperado el ${c.drop.recoveredReviewDate}` : ''}`}
+                          </title>
+                        )}
+                        {hasDrop && (
+                          <circle
+                            cx={c.x}
+                            cy={c.y}
+                            r={hoveredIdx === c.idx || isHighlighted ? 7.5 : 6}
+                            fill="#fff1f2"
+                            stroke="#e11d48"
+                            strokeWidth={1.75}
+                          />
+                        )}
                         <circle
                           cx={c.x}
                           cy={c.y}
                           r={hoveredIdx === c.idx || isHighlighted ? 4.5 : 3.2}
-                          fill="#ffffff"
-                          stroke={compMeta.color}
-                          strokeWidth={2}
+                          fill={hasDrop ? '#e11d48' : '#ffffff'}
+                          stroke={hasDrop ? '#ffffff' : compMeta.color}
+                          strokeWidth={hasDrop ? 1.5 : 2}
                         />
                         {showPointValue && (
                           <text
                             x={c.x}
-                            y={c.y - 8}
+                            y={c.y - 9}
                             textAnchor="middle"
                             className="text-[9.5px] font-mono font-bold"
-                            fill={compMeta.color}
+                            fill={hasDrop ? '#e11d48' : compMeta.color}
                           >
-                            {c.score.toFixed(1)}
+                            {c.score.toFixed(1)}{hasDrop ? ' ↓' : ''}
                           </text>
                         )}
                       </g>
@@ -514,7 +628,7 @@ export default function CheckpointProgressChart({
       {/* Legend & Interactive Readout */}
       {chartMode === 'media' ? (
         <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100 text-[11px]">
-          <div className="flex items-center gap-4 text-slate-600">
+          <div className="flex flex-wrap items-center gap-4 text-slate-600">
             <span className="inline-flex items-center gap-1.5">
               <span className="w-3.5 h-0.5 bg-indigo-600 inline-block" />
               Media conseguida
@@ -523,21 +637,44 @@ export default function CheckpointProgressChart({
               <span className="w-3.5 h-0.5 border-t-2 border-dashed border-slate-400 inline-block" />
               Meta requerida
             </span>
+            {scoreDrops.length > 0 && (
+              <span className="inline-flex items-center gap-1 text-rose-700 font-semibold">
+                <span className="w-2.5 h-2.5 rounded-full border-2 border-rose-600 bg-rose-100 inline-block" />
+                Descenso en checkpoint
+              </span>
+            )}
           </div>
 
-          {activePoint && (
-            <div className="text-slate-600 font-mono tabular-nums">
-              {activePoint.cp.reviewDate}:{' '}
-              <strong className="text-indigo-700">{activePoint.avgAchieved.toFixed(2)}</strong>
-              {' / '}
-              <span>{activePoint.required.toFixed(2)}</span>
-              {' '}
-              <span className={activePoint.avgAchieved >= activePoint.required ? 'text-emerald-700' : 'text-amber-700'}>
-                ({activePoint.avgAchieved >= activePoint.required ? '+' : ''}
-                {(activePoint.avgAchieved - activePoint.required).toFixed(2)})
-              </span>
-            </div>
-          )}
+          {activePoint && (() => {
+            const activeDrops = dropsByCheckpoint.get(activePoint.cp.id) || [];
+            return (
+              <div className="text-slate-600 font-mono tabular-nums flex items-center gap-1.5 flex-wrap">
+                <span>
+                  {activePoint.cp.reviewDate}:{' '}
+                  <strong className="text-indigo-700">{activePoint.avgAchieved.toFixed(2)}</strong>
+                  {' / '}
+                  <span>{activePoint.required.toFixed(2)}</span>{' '}
+                  <span className={activePoint.avgAchieved >= activePoint.required ? 'text-emerald-700' : 'text-amber-700'}>
+                    ({activePoint.avgAchieved >= activePoint.required ? '+' : ''}
+                    {(activePoint.avgAchieved - activePoint.required).toFixed(2)})
+                  </span>
+                </span>
+                {activeDrops.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setChartMode('competencies');
+                      setSelectedCompId(activeDrops[0].competencyId);
+                    }}
+                    className="inline-flex items-center gap-1 text-[10px] font-sans font-bold text-rose-700 bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded hover:bg-rose-100 transition-colors"
+                  >
+                    <AlertTriangle className="h-3 w-3 shrink-0" />
+                    {activeDrops.length} {activeDrops.length === 1 ? 'bajada' : 'bajadas'}
+                  </button>
+                )}
+              </div>
+            );
+          })()}
         </div>
       ) : (
         <div className="space-y-2 pt-2 border-t border-slate-100">
@@ -545,6 +682,10 @@ export default function CheckpointProgressChart({
             {compMetaList.map((comp) => {
               const isSelected = selectedCompId === comp.id;
               const scoreAtActive = activePoint?.cp.scores?.find(s => s.competencyId === comp.id)?.score;
+              const hasCompActiveDrop = compIdsWithActiveDrop.has(comp.id);
+              const activeCompDrop = activePoint
+                ? dropByCpAndComp.get(`${activePoint.cp.id}::${comp.id}`)
+                : undefined;
               return (
                 <div key={comp.id} className="inline-flex">
                   <TruncatedTooltip text={comp.name} className="inline-flex">
@@ -556,6 +697,8 @@ export default function CheckpointProgressChart({
                           ? 'bg-slate-100 text-slate-900 border-slate-400 font-semibold shadow-2xs'
                           : selectedCompId !== null
                           ? 'bg-slate-50 text-slate-400 border-slate-200 hover:text-slate-700'
+                          : hasCompActiveDrop
+                          ? 'bg-rose-50/50 text-slate-800 border-rose-200 hover:bg-rose-50'
                           : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
                       }`}
                     >
@@ -565,9 +708,14 @@ export default function CheckpointProgressChart({
                       />
                       <span data-truncate-target className="truncate max-w-[160px]">{comp.name}</span>
                       {scoreAtActive !== undefined && (
-                        <span className="font-mono tabular-nums font-semibold opacity-80">
+                        <span className={`font-mono tabular-nums font-semibold ${
+                          activeCompDrop ? 'text-rose-700' : 'opacity-80'
+                        }`}>
                           {scoreAtActive.toFixed(1)}
                         </span>
+                      )}
+                      {hasCompActiveDrop && (
+                        <AlertTriangle className="h-3 w-3 text-rose-600 shrink-0" />
                       )}
                     </button>
                   </TruncatedTooltip>
