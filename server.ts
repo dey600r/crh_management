@@ -3,7 +3,7 @@ import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { dbStoreInstance } from './src/data/dbStore';
 import { GoogleGenAI } from '@google/genai';
-import { ProjectRoleRequest, CheckpointReview, AnnualEvaluation, DivisionBudget } from './src/types';
+import { ProjectRoleRequest, RoleCriticality, ROLE_CRITICALITY_META, CheckpointReview, AnnualEvaluation, DivisionBudget, VALID_RECOGNITION_IDS, getDefaultSalaryForLevel } from './src/types';
 
 // Lazy-initialized Gemini AI client
 let aiInstance: GoogleGenAI | null = null;
@@ -99,6 +99,11 @@ async function startServer() {
       }
       const added = await dbStoreInstance.addEmployee({
         ...newEmp,
+        salaryEur:
+          typeof newEmp.salaryEur === 'number' && newEmp.salaryEur > 0
+            ? Number(newEmp.salaryEur)
+            : getDefaultSalaryForLevel(newEmp.currentLevelId || 'L2'),
+        recognitions: Array.isArray(newEmp.recognitions) ? newEmp.recognitions : [],
         skills: newEmp.skills || [],
         certifications: newEmp.certifications || [],
         projectHistory: newEmp.projectHistory || []
@@ -114,6 +119,26 @@ async function startServer() {
       const emp = await dbStoreInstance.addEmployeeSkill(req.params.id, req.body);
       if (!emp) return res.status(404).json({ error: 'Employee not found' });
       res.status(201).json(emp);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.patch('/api/employees/:id/recognitions', async (req, res) => {
+    try {
+      const rawRecognitions = req.body?.recognitions;
+      if (!Array.isArray(rawRecognitions)) {
+        return res.status(400).json({ error: 'El campo recognitions debe ser un array.' });
+      }
+      const hasInvalidTag = rawRecognitions.some(
+        tag => typeof tag !== 'string' || !VALID_RECOGNITION_IDS.has(tag)
+      );
+      if (hasInvalidTag) {
+        return res.status(400).json({ error: 'Uno o más identificadores de marca no son válidos.' });
+      }
+      const emp = await dbStoreInstance.updateEmployeeRecognitions(req.params.id, rawRecognitions);
+      if (!emp) return res.status(404).json({ error: 'Employee not found' });
+      res.json(emp);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
@@ -140,6 +165,7 @@ async function startServer() {
         clientName: prj.clientName || 'Cliente Genérico',
         projectName: prj.projectName,
         businessUnit: prj.businessUnit || 'IT Consulting',
+        division: typeof prj.division === 'string' && prj.division.trim() ? prj.division.trim() : 'Software Engineering',
         status: prj.status || 'InPreparation',
         startDate: prj.startDate || new Date().toISOString().split('T')[0],
         endDate: prj.endDate || '',
@@ -168,9 +194,22 @@ async function startServer() {
       if (!roleReq.projectId || !roleReq.careerPathId || !roleReq.requiredLevelId) {
         return res.status(400).json({ error: 'Missing required role request fields' });
       }
-      const newReq = {
-        ...roleReq,
-        id: `REQ_${Date.now()}`
+      const validCriticalities: RoleCriticality[] = ['Low', 'Medium', 'High', 'Critical'];
+      const normalizedCriticality: RoleCriticality =
+        roleReq.criticality && validCriticalities.includes(roleReq.criticality)
+          ? roleReq.criticality
+          : 'Medium';
+
+      const newReq: ProjectRoleRequest = {
+        id: `REQ_${Date.now()}`,
+        projectId: roleReq.projectId,
+        careerPathId: roleReq.careerPathId,
+        requiredLevelId: roleReq.requiredLevelId,
+        requiredSkills: Array.isArray(roleReq.requiredSkills) ? roleReq.requiredSkills : [],
+        startDate: roleReq.startDate || new Date().toISOString().split('T')[0],
+        allocation: Number(roleReq.allocation) || 100,
+        priority: roleReq.priority || 'Medium',
+        criticality: normalizedCriticality
       };
       const added = await dbStoreInstance.addProjectRoleRequest(newReq);
       res.status(201).json(added);
@@ -451,14 +490,41 @@ async function startServer() {
         return res.status(400).json({ error: 'Missing employee or role request parameters' });
       }
 
+      const reqCriticality: RoleCriticality =
+        request.criticality && request.criticality in ROLE_CRITICALITY_META
+          ? request.criticality
+          : 'Medium';
+      const criticalityLabel = ROLE_CRITICALITY_META[reqCriticality].label;
+      const empRecognitions = Array.isArray(employee.recognitions) && employee.recognitions.length > 0
+        ? employee.recognitions.join(', ')
+        : 'Ninguna';
+      const criticalitySignals = Array.isArray(scoreBreakdown?.criticalitySignals) && scoreBreakdown.criticalitySignals.length > 0
+        ? scoreBreakdown.criticalitySignals.join(', ')
+        : 'Sin señales destacadas';
+
+      const projectDivision = scoreBreakdown?.projectDivision || 'No especificada';
+      const candidateDivision = scoreBreakdown?.candidateDivision || employee.division || employee.department || 'No especificada';
+      const sameDivisionText =
+        scoreBreakdown?.projectDivision
+          ? scoreBreakdown?.sameDivision
+            ? 'Sí (misma división que el proyecto)'
+            : `No (pertenece a ${candidateDivision}, proyecto en ${projectDivision})`
+          : 'Sin división de proyecto definida';
+
       const prompt = `
-        Analiza detalladamente por qué el colaborador ${employee.name} ${employee.surname} (Nivel: ${employee.currentLevelId}, Especialidad: ${employee.currentCareerPathId}) encaja en el rol de proyecto solicitado.
+        Analiza detalladamente por qué el colaborador ${employee.name} ${employee.surname} (Nivel: ${employee.currentLevelId}, Especialidad: ${employee.currentCareerPathId}, División: ${candidateDivision}) encaja en el rol de proyecto solicitado.
 
         Requisitos de la solicitud de Staffing:
         - Especialidad de carrera: ${request.careerPathId}
         - Nivel de experiencia requerido: ${request.requiredLevelId}
         - Skills Técnicos requeridos: ${request.requiredSkills ? request.requiredSkills.join(', ') : 'Ninguno especificado'}
         - Dedicación/Asignación esperada: ${request.allocation}%
+        - Criticidad del puesto: ${criticalityLabel} (${reqCriticality})
+        - División del proyecto: ${projectDivision}
+        - Alineación de división: ${sameDivisionText}
+
+        Distintivos de talento del colaborador: ${empRecognitions}
+        Señales de evaluación y autonomía detectadas: ${criticalitySignals}
 
         Skills actuales del colaborador:
         ${JSON.stringify(employee.skills)}
@@ -471,13 +537,14 @@ async function startServer() {
         - Compatibilidad de Nivel Corporativo: ${scoreBreakdown.levelScore}%
         - Compatibilidad de Disponibilidad: ${scoreBreakdown.availabilityScore}%
         - Desempeño Histórico: ${scoreBreakdown.performanceScore}%
+        - Idoneidad Crítica (Alto Potencial / Evaluaciones / Autonomía): ${scoreBreakdown.criticalityFitScore ?? 'N/A'}% (Autonomía estimada: ${scoreBreakdown.autonomyScore ?? 'N/A'}%)
         - Score Global: ${scoreBreakdown.globalScore}%
 
         Por favor, actúa como el agente experto "HR PROJECT TALENT ORCHESTRATOR" y genera un informe estructurado que contenga:
-        1. **Resumen de Idoneidad**: Breve análisis de fortalezas técnicas y funcionales que lo hacen adecuado.
-        2. **Gaps Identificados**: Qué tecnologías requeridas le faltan o qué skills debería reforzar antes/durante la incorporación.
+        1. **Resumen de Idoneidad**: Breve análisis de fortalezas técnicas y funcionales que lo hacen adecuado (teniendo en cuenta la criticidad del puesto, su autonomía y evaluaciones si aplica).
+        2. **Gaps Identificados**: Qué tecnologías requeridas le faltan o qué skills/competencias debería reforzar antes/durante la incorporación.
         3. **Plan de Reskilling Rápido Recomendado**: Sugiere acciones de formación específicas o mentoría técnica basándote en la solicitud de staffing.
-        4. **Riesgos de Asignación**: Analiza riesgos (por ejemplo, si tiene poca disponibilidad o si está sobre-calificado y puede aburrirse, o sub-calificado).
+        4. **Riesgos de Asignación**: Analiza riesgos (por ejemplo, disponibilidad, sobre/sub-cualificación, o nivel de autonomía/dependencia frente a la criticidad del rol).
 
         Escribe tu respuesta en un formato markdown elegante en español. Sé sumamente profesional, constructivo y útil para el Project Manager.
       `;

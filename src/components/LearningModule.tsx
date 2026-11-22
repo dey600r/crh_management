@@ -1,10 +1,20 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
-  BookOpen, Target, Calendar, Award, Plus, Sparkles, CheckCircle, HelpCircle, ChevronLeft, ChevronRight, User, GraduationCap, ClipboardCheck, FileText, TrendingUp
+  AlertTriangle, BookOpen, Target, Calendar, Award, Plus, Sparkles, CheckCircle, HelpCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, User, GraduationCap, ClipboardCheck, FileText, TrendingDown, TrendingUp, Filter, Search, X, Info
 } from 'lucide-react';
-import { Employee, Project, TrainingCatalog, DevelopmentPlan, CheckpointReview, UserRole, CompetencyStage, getRequiredStage, scoreToStage, stageToScore } from '../types';
+import { Employee, Project, TrainingCatalog, DevelopmentPlan, CheckpointReview, UserRole, CompetencyStage, RecognitionTagId, getRequiredStage, scoreToStage, getLevelTargetScore } from '../types';
 import { MarkdownView } from './MarkdownView';
 import EmployeeCVPanel from './EmployeeCVPanel';
+import EmployeeRecognitionIcons from './EmployeeRecognitionIcons';
+import TruncatedTooltip from './TruncatedTooltip';
+import { getEmployeeDivision } from '../utils/salaryRecommendation';
+import {
+  computeCompetencyScoreDrops,
+  groupDropsByCheckpoint,
+  indexDropsByCheckpointAndCompetency,
+  sortCheckpointsChronological,
+  sortCheckpointsNewestFirst
+} from '../utils/checkpointAlerts';
 
 interface LearningModuleProps {
   userRole: UserRole;
@@ -31,9 +41,11 @@ export default function LearningModule({
   competencies,
   onDataRefresh
 }: LearningModuleProps) {
-  // Selected Employee
+  // Selected Employee & List Filters
   const [selectedEmpId, setSelectedEmpId] = useState<string>('E001');
   const [targetLevelId, setTargetLevelId] = useState<string>('L4');
+  const [empDivisionFilter, setEmpDivisionFilter] = useState<string>('ALL');
+  const [empSearchQuery, setEmpSearchQuery] = useState<string>('');
 
   // AI Gap Analysis
   const [isGapLoading, setIsGapLoading] = useState(false);
@@ -69,6 +81,7 @@ export default function LearningModule({
   const [editingCheckpointId, setEditingCheckpointId] = useState<string | null>(null);
   const [editingCheckpoint, setEditingCheckpoint] = useState<CheckpointReview | null>(null);
   const [isCareerGuideExpanded, setIsCareerGuideExpanded] = useState(false);
+  const [guideLevelId, setGuideLevelId] = useState<string>('');
   const [showCVPanel, setShowCVPanel] = useState(true);
 
   const handleSaveEditedCheckpoint = async (e: React.FormEvent) => {
@@ -95,14 +108,71 @@ export default function LearningModule({
     }
   };
 
-  // Get active selected employee objects
+  // Get active selected employee objects & filtered list
+  const availableDivisions = useMemo(() => {
+    const set = new Set<string>();
+    employees.forEach(emp => {
+      const div = getEmployeeDivision(emp);
+      if (div) set.add(div);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'es'));
+  }, [employees]);
+
+  const filteredEmployees = useMemo(() => {
+    const normalizedQuery = empSearchQuery
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+
+    return employees.filter(emp => {
+      if (empDivisionFilter !== 'ALL' && getEmployeeDivision(emp) !== empDivisionFilter) {
+        return false;
+      }
+      if (!normalizedQuery) return true;
+      const fullName = `${emp.name} ${emp.surname}`
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+      const empIdLower = emp.employeeId.toLowerCase();
+      return fullName.includes(normalizedQuery) || empIdLower.includes(normalizedQuery);
+    });
+  }, [employees, empDivisionFilter, empSearchQuery]);
+
   const selectedEmployee = employees.find(e => e.employeeId === selectedEmpId) || employees[0];
   const selectedPlan = devPlans.find(p => p.employeeId === selectedEmpId);
+  const canManageRecognitions = userRole === 'RRHH' || userRole === 'ProjectManager';
+
+  const handleToggleRecognition = async (
+    employeeId: string,
+    tagId: RecognitionTagId,
+    nextActive: boolean
+  ) => {
+    const target = employees.find(e => e.employeeId === employeeId);
+    const current = target?.recognitions || [];
+    const nextRecognitions = nextActive
+      ? Array.from(new Set([...current, tagId]))
+      : current.filter(t => t !== tagId);
+
+    const res = await fetch(`/api/employees/${employeeId}/recognitions`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ recognitions: nextRecognitions })
+    });
+
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || 'No se pudo guardar la marca de talento.');
+    }
+
+    onDataRefresh();
+  };
 
   // Automatically reset gap output when changing employee
   useEffect(() => {
     setGapAnalysisMarkdown(null);
     setGapError(null);
+    setGuideLevelId('');
     // suggest a target level (+1 of current)
     if (selectedEmployee) {
       const currentLvlNum = parseInt(selectedEmployee.currentLevelId.replace('L', '')) || 1;
@@ -116,25 +186,8 @@ export default function LearningModule({
     }));
   }, [selectedEmpId]);
 
-  const getTargetScoreForLevelAndCompetency = (levelId: string, competencyId: string): number => {
-    switch (levelId) {
-      case 'L1': // Technician (Nivel 1')
-        return 2; // Etapa A
-      case 'L2': // Engineer (Nivel 1)
-        return 3; // Etapa B
-      case 'L3': // Senior Engineer (Nivel 2)
-        return 3.5; // Etapa B
-      case 'L4': // Manager (Nivel 3)
-        return 4; // Etapa C
-      case 'L5': // Senior Manager (Nivel 4)
-        return 4.5; // Etapa D
-      case 'L6': // Director (Nivel 5)
-      case 'L7': // Senior Director (Nivel 6)
-        return 5; // Etapa E
-      default:
-        return 3;
-    }
-  };
+  const getTargetScoreForLevelAndCompetency = (levelId: string, _competencyId: string): number =>
+    getLevelTargetScore(levelId);
 
   const getTargetStageForLevel = (levelId: string): 'A' | 'B' | 'C' | 'D' | 'E' => {
     switch (levelId) {
@@ -175,15 +228,33 @@ export default function LearningModule({
     }
   };
 
-  const renderCareerGuidePanel = (selectedEmpForCheckpoint: Employee | undefined) => {
-    const selectedPathForCheckpoint = selectedEmpForCheckpoint ? careerPaths.find(p => p.id === selectedEmpForCheckpoint.currentCareerPathId) : null;
-    const selectedLevelForCheckpoint = selectedEmpForCheckpoint ? careerLevels.find(l => l.id === selectedEmpForCheckpoint.currentLevelId) : null;
+  const renderCareerGuidePanel = (
+    selectedEmpForCheckpoint: Employee | undefined,
+    isStandalone = false
+  ) => {
+    const selectedPathForCheckpoint = selectedEmpForCheckpoint
+      ? careerPaths.find(p => p.id === selectedEmpForCheckpoint.currentCareerPathId)
+      : null;
+    const effectiveLevelId = guideLevelId || selectedEmpForCheckpoint?.currentLevelId || '';
+    const selectedLevelForCheckpoint = selectedEmpForCheckpoint
+      ? careerLevels.find(l => l.id === effectiveLevelId)
+      : null;
+    const currentLvlNum = selectedEmpForCheckpoint
+      ? parseInt(selectedEmpForCheckpoint.currentLevelId.replace('L', ''), 10) || 1
+      : 1;
+    const nextLvlId = `L${Math.min(7, currentLvlNum + 1)}`;
 
     return (
-      <div className="bg-white border border-slate-200 rounded-xl p-3.5 space-y-3.5 overflow-y-auto max-h-[550px] shadow-sm animate-in fade-in slide-in-from-right-2 duration-300">
+      <div
+        className={`bg-white border border-slate-200 rounded-xl p-3.5 space-y-3.5 shadow-sm ${
+          isStandalone ? 'mb-5' : 'overflow-y-auto max-h-[550px]'
+        }`}
+      >
         <div className="flex justify-between items-center border-b border-slate-100 pb-2">
           <div>
-            <span className="text-[9px] font-bold text-emerald-600 uppercase tracking-wide block">Información de Referencia de la BD</span>
+            <span className="text-[9px] font-bold text-emerald-600 uppercase tracking-wide block">
+              Información de Referencia de la BD
+            </span>
             <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1">
               <GraduationCap className="h-3.5 w-3.5 text-emerald-600" />
               Guía de Carreras Sopra Steria
@@ -209,63 +280,116 @@ export default function LearningModule({
             </p>
           </div>
         ) : (
-          <div className="space-y-3.5 animate-in fade-in duration-200">
-            {/* Carrera */}
-            <div className="bg-emerald-50/30 border border-emerald-100/55 rounded-lg p-3 space-y-1.5">
-              <div className="flex justify-between items-center">
-                <span className="text-[9px] font-bold text-emerald-700 uppercase bg-emerald-50 px-1.5 py-0.2 rounded">Carrera</span>
-                <span className="text-[10px] font-semibold text-slate-900">{selectedPathForCheckpoint?.name}</span>
+          <div className="space-y-3.5">
+            <div className={isStandalone ? 'grid grid-cols-1 md:grid-cols-2 gap-3.5' : 'space-y-3.5'}>
+              {/* Carrera */}
+              <div className="bg-emerald-50/30 border border-emerald-100/55 rounded-lg p-3 space-y-1.5">
+                <div className="flex justify-between items-center gap-2">
+                  <span className="text-[9px] font-bold text-emerald-700 uppercase bg-emerald-50 px-1.5 py-0.2 rounded shrink-0">
+                    Carrera
+                  </span>
+                  <span className="text-[10px] font-semibold text-slate-900 text-right">
+                    {selectedPathForCheckpoint?.name}
+                  </span>
+                </div>
+                {selectedPathForCheckpoint?.finality && (
+                  <div>
+                    <strong className="text-[9.5px] text-slate-700 block">Finalidad del Rol:</strong>
+                    <p className="text-[10px] text-slate-600 leading-relaxed">
+                      {selectedPathForCheckpoint.finality}
+                    </p>
+                  </div>
+                )}
+                {selectedPathForCheckpoint?.toEvaluate && (
+                  <div>
+                    <strong className="text-[9.5px] text-slate-700 block">¿Qué evaluar en esta carrera?:</strong>
+                    <p className="text-[10px] text-slate-600 font-medium">
+                      {selectedPathForCheckpoint.toEvaluate}
+                    </p>
+                  </div>
+                )}
               </div>
-              {selectedPathForCheckpoint?.finality && (
-                <div>
-                  <strong className="text-[9.5px] text-slate-700 block">Finalidad del Rol:</strong>
-                  <p className="text-[10px] text-slate-600 leading-relaxed">{selectedPathForCheckpoint.finality}</p>
-                </div>
-              )}
-              {selectedPathForCheckpoint?.toEvaluate && (
-                <div>
-                  <strong className="text-[9.5px] text-slate-700 block">¿Qué evaluar en esta carrera?:</strong>
-                  <p className="text-[10px] text-slate-600 font-medium">{selectedPathForCheckpoint.toEvaluate}</p>
-                </div>
-              )}
-            </div>
 
-            {/* Posición */}
-            <div className="bg-blue-50/30 border border-blue-100/55 rounded-lg p-3 space-y-1.5">
-              <div className="flex justify-between items-center">
-                <span className="text-[9px] font-bold text-blue-700 uppercase bg-blue-50 px-1.5 py-0.2 rounded">Nivel / Posición</span>
-                <span className="text-[10px] font-semibold text-slate-900 font-mono bg-white px-1 border rounded">{selectedLevelForCheckpoint?.levelCode} • {selectedLevelForCheckpoint?.name}</span>
+              {/* Posición */}
+              <div className="bg-blue-50/30 border border-blue-100/55 rounded-lg p-3 space-y-1.5">
+                <div className="flex justify-between items-center gap-2">
+                  <span className="text-[9px] font-bold text-blue-700 uppercase bg-blue-50 px-1.5 py-0.2 rounded shrink-0">
+                    Nivel / Posición
+                  </span>
+                  <select
+                    aria-label="Nivel de referencia en Guía de Carreras"
+                    value={effectiveLevelId}
+                    onChange={e => setGuideLevelId(e.target.value)}
+                    className="text-[10px] font-semibold text-slate-900 font-mono bg-white px-1.5 py-0.5 border border-slate-200 rounded max-w-[230px]"
+                  >
+                    {careerLevels.map(cl => {
+                      const tag =
+                        cl.id === selectedEmpForCheckpoint.currentLevelId
+                          ? ' (Actual)'
+                          : cl.id === nextLvlId && nextLvlId !== selectedEmpForCheckpoint.currentLevelId
+                            ? ' (Meta)'
+                            : '';
+                      return (
+                        <option key={cl.id} value={cl.id}>
+                          {cl.levelCode} • {cl.name}{tag}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+                {selectedLevelForCheckpoint?.mission && (
+                  <div>
+                    <strong className="text-[9.5px] text-slate-700 block">Misión de la Posición:</strong>
+                    <p className="text-[10px] text-slate-600 leading-relaxed">
+                      {selectedLevelForCheckpoint.mission}
+                    </p>
+                  </div>
+                )}
+                {selectedLevelForCheckpoint?.evaluationIndicators && (
+                  <div>
+                    <strong className="text-[9.5px] text-slate-700 block">Indicadores Clave de Evaluación:</strong>
+                    <p className="text-[10px] text-slate-600 font-medium">
+                      {selectedLevelForCheckpoint.evaluationIndicators}
+                    </p>
+                  </div>
+                )}
               </div>
-              {selectedLevelForCheckpoint?.mission && (
-                <div>
-                  <strong className="text-[9.5px] text-slate-700 block">Misión de la Posición:</strong>
-                  <p className="text-[10px] text-slate-600 leading-relaxed">{selectedLevelForCheckpoint.mission}</p>
-                </div>
-              )}
-              {selectedLevelForCheckpoint?.evaluationIndicators && (
-                <div>
-                  <strong className="text-[9.5px] text-slate-700 block">Indicadores Clave de Evaluación:</strong>
-                  <p className="text-[10px] text-slate-600 font-medium">{selectedLevelForCheckpoint.evaluationIndicators}</p>
-                </div>
-              )}
             </div>
 
             {/* Competencias Clave y Niveles de Etapa */}
             <div className="space-y-2">
-              <strong className="text-[10px] font-bold text-slate-700 uppercase block border-b pb-1">Comportamientos Esperados por Competencia</strong>
-              <div className="space-y-2 max-h-[250px] overflow-y-auto pr-1">
+              <strong className="text-[10px] font-bold text-slate-700 uppercase block border-b pb-1">
+                Comportamientos Esperados por Competencia
+              </strong>
+              <div
+                className={
+                  isStandalone
+                    ? 'grid grid-cols-1 md:grid-cols-2 gap-2.5'
+                    : 'space-y-2 max-h-[250px] overflow-y-auto pr-1'
+                }
+              >
                 {competencies.map(comp => {
-                  const targetStage = (selectedPathForCheckpoint && selectedLevelForCheckpoint)
-                    ? getRequiredStage(selectedPathForCheckpoint.id, selectedLevelForCheckpoint.id, comp.id)
-                    : 'B';
+                  const targetStage =
+                    selectedPathForCheckpoint && selectedLevelForCheckpoint
+                      ? getRequiredStage(
+                          selectedPathForCheckpoint.id,
+                          selectedLevelForCheckpoint.id,
+                          comp.id
+                        )
+                      : 'B';
                   const indicators = comp.stages?.[targetStage] || [];
-                  const targetScore = selectedLevelForCheckpoint ? getTargetScoreForLevelAndCompetency(selectedLevelForCheckpoint.id, comp.id) : 3;
+                  const targetScore = selectedLevelForCheckpoint
+                    ? getTargetScoreForLevelAndCompetency(selectedLevelForCheckpoint.id, comp.id)
+                    : 3;
 
                   return (
-                    <div key={comp.id} className="border border-slate-100 rounded p-2 bg-slate-50 space-y-1">
-                      <div className="flex justify-between items-center text-[10px] font-semibold border-b border-dashed pb-1">
+                    <div
+                      key={comp.id}
+                      className="border border-slate-100 rounded p-2 bg-slate-50 space-y-1"
+                    >
+                      <div className="flex justify-between items-center gap-2 text-[10px] font-semibold border-b border-dashed pb-1">
                         <span className="text-slate-800">{comp.name}</span>
-                        <span className="text-indigo-600 font-bold bg-white px-1.5 rounded border">
+                        <span className="text-indigo-600 font-bold bg-white px-1.5 rounded border shrink-0">
                           Etapa {targetStage.toLowerCase()} (Meta: {targetScore})
                         </span>
                       </div>
@@ -274,7 +398,9 @@ export default function LearningModule({
                           <li key={i}>{ind}</li>
                         ))}
                         {indicators.length === 0 && (
-                          <li className="list-none text-slate-400 italic">No hay comportamientos registrados en esta etapa de la base de datos.</li>
+                          <li className="list-none text-slate-400 italic">
+                            No hay comportamientos registrados en esta etapa de la base de datos.
+                          </li>
                         )}
                       </ul>
                     </div>
@@ -435,42 +561,106 @@ export default function LearningModule({
         {/* Left Hand: Employee List and their Active Plan */}
         <div className="lg:col-span-4 space-y-6">
           <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-4">
-            <h3 className="text-sm font-bold text-slate-900 mb-3 flex items-center gap-2">
-              <User className="h-4 w-4 text-indigo-600" />
-              Selecciona Colaborador
-            </h3>
-            <p className="text-xs text-slate-500 mb-4">
-              Visualiza su plan de desarrollo, diagnostica brechas de promoción y haz seguimiento en el proyecto.
-            </p>
-
-            <div className="space-y-2 max-h-[258px] overflow-y-auto p-1 -m-1">
-              {employees.map((emp) => {
-                const isSelected = selectedEmpId === emp.employeeId;
-                return (
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5 min-w-0">
+                <User className="h-4 w-4 text-indigo-600 shrink-0" />
+                <span className="truncate">Selecciona Colaborador</span>
+                <span className="text-xs font-semibold text-slate-500 tabular-nums shrink-0">({filteredEmployees.length})</span>
+                <TruncatedTooltip
+                  text="Visualiza su plan de desarrollo, diagnostica brechas de promoción y haz seguimiento en el proyecto."
+                  onlyWhenTruncated={false}
+                  className="inline-flex items-center shrink-0"
+                >
                   <button
-                    key={emp.employeeId}
-                    id={`emp-select-${emp.employeeId}`}
                     type="button"
-                    onClick={() => setSelectedEmpId(emp.employeeId)}
-                    className={`w-full text-left p-2.5 rounded-lg border text-xs transition flex items-center justify-between gap-2 ${
-                      isSelected
-                        ? 'bg-indigo-50 border-indigo-500 ring-2 ring-indigo-500/35 shadow-xs'
-                        : 'bg-slate-50 border-slate-200 hover:bg-slate-100 hover:border-slate-300'
-                    }`}
+                    aria-label="Información sobre Selecciona Colaborador"
+                    className="text-blue-600 hover:text-blue-700 focus:text-blue-700 focus:outline-none p-0.5 rounded-full transition-colors"
                   >
-                    <div className="min-w-0">
-                      <div className="font-bold text-slate-900 truncate">{emp.name} {emp.surname}</div>
-                      <div className="text-[10px] text-slate-500 mt-0.5 truncate">
-                        {careerPaths.find(p => p.id === emp.currentCareerPathId)?.name}
-                      </div>
-                    </div>
-                    <span className="text-[10px] font-mono bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded font-bold shrink-0">
-                      {emp.currentLevelId}
-                    </span>
+                    <Info className="h-3.5 w-3.5" />
                   </button>
-                );
-              })}
+                </TruncatedTooltip>
+              </h3>
             </div>
+
+            {/* Buscador por colaborador y filtro por división al mismo nivel */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 mb-3">
+              <div className="relative flex-1 min-w-0">
+                <Search className="h-3.5 w-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" aria-hidden="true" />
+                <input
+                  type="text"
+                  aria-label="Buscar colaborador por nombre o ID"
+                  value={empSearchQuery}
+                  onChange={e => setEmpSearchQuery(e.target.value)}
+                  placeholder="Buscar colaborador..."
+                  className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg pl-8 pr-7 py-1.5 text-slate-700 placeholder:text-slate-400 focus:outline-none focus:bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                />
+                {empSearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setEmpSearchQuery('')}
+                    aria-label="Limpiar búsqueda de colaborador"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+              <div className="relative sm:w-[155px] shrink-0">
+                <Filter className="h-3.5 w-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" aria-hidden="true" />
+                <select
+                  aria-label="Filtrar colaboradores por división"
+                  value={empDivisionFilter}
+                  onChange={e => setEmpDivisionFilter(e.target.value)}
+                  title={empDivisionFilter === 'ALL' ? 'Divisiones...' : empDivisionFilter}
+                  className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg pl-8 pr-2 py-1.5 text-slate-700 font-medium focus:outline-none focus:bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 truncate"
+                >
+                  <option value="ALL">Divisiones...</option>
+                  {availableDivisions.map(div => (
+                    <option key={div} value={div}>
+                      {div}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {filteredEmployees.length === 0 ? (
+              <p className="text-xs text-slate-400 italic bg-slate-50 p-3 rounded-lg border border-slate-200">
+                No se encontraron colaboradores que coincidan con los filtros seleccionados.
+              </p>
+            ) : (
+              <div className="space-y-2 max-h-[258px] overflow-y-auto p-1 -m-1">
+                {filteredEmployees.map((emp) => {
+                  const isSelected = selectedEmpId === emp.employeeId;
+                  return (
+                    <button
+                      key={emp.employeeId}
+                      id={`emp-select-${emp.employeeId}`}
+                      type="button"
+                      onClick={() => setSelectedEmpId(emp.employeeId)}
+                      className={`w-full text-left p-2.5 rounded-lg border text-xs transition flex items-center justify-between gap-2 ${
+                        isSelected
+                          ? 'bg-indigo-50 border-indigo-500 ring-2 ring-indigo-500/35 shadow-xs'
+                          : 'bg-slate-50 border-slate-200 hover:bg-slate-100 hover:border-slate-300'
+                      }`}
+                    >
+                      <div className="min-w-0">
+                        <div className="font-bold text-slate-900 flex items-center gap-1 min-w-0">
+                          <span className="truncate">{emp.name} {emp.surname}</span>
+                          <EmployeeRecognitionIcons employee={emp} size="xs" />
+                        </div>
+                        <div className="text-[10px] text-slate-500 mt-0.5 truncate">
+                          {careerPaths.find(p => p.id === emp.currentCareerPathId)?.name} · {getEmployeeDivision(emp)}
+                        </div>
+                      </div>
+                      <span className="text-[10px] font-mono bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded font-bold shrink-0">
+                        {emp.currentLevelId}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Development Plan Box */}
@@ -616,6 +806,8 @@ export default function LearningModule({
                   careerPaths={careerPaths}
                   careerLevels={careerLevels}
                   projects={projects}
+                  canManageRecognitions={canManageRecognitions}
+                  onToggleRecognition={handleToggleRecognition}
                 />
               )}
             </div>
@@ -634,10 +826,14 @@ export default function LearningModule({
             {selectedEmployee && (
               <div className="space-y-4">
                 <div className="bg-slate-50 border border-slate-150 rounded-lg p-3 flex flex-wrap items-center justify-between gap-3 text-xs">
-                  <div>
-                    Colaborador: <strong className="text-slate-950">{selectedEmployee.name} {selectedEmployee.surname}</strong>
+                  <div className="flex flex-wrap items-center gap-1">
+                    <span>Colaborador:</span>
+                    <strong className="text-slate-950 inline-flex items-center gap-1">
+                      <span>{selectedEmployee.name} {selectedEmployee.surname}</span>
+                      <EmployeeRecognitionIcons employee={selectedEmployee} size="xs" />
+                    </strong>
                     <span className="text-slate-400 mx-1">|</span>
-                    División: <strong className="text-slate-800">{selectedEmployee.division || selectedEmployee.department}</strong>
+                    <span>División:</span> <strong className="text-slate-800">{selectedEmployee.division || selectedEmployee.department}</strong>
                     <span className="text-slate-400 mx-1">|</span>
                     Nivel Actual: <span className="bg-slate-200 font-mono text-slate-700 px-1 rounded text-[10px] font-bold">{selectedEmployee.currentLevelId}</span>
                   </div>
@@ -702,7 +898,7 @@ export default function LearningModule({
 
           {/* Performance Checkpoints Feed */}
           <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-4">
-            <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-3">
+            <div className="flex flex-wrap justify-between items-center gap-3 mb-4 border-b border-slate-100 pb-3">
               <div>
                 <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
                   <ClipboardCheck className="h-4 w-4 text-slate-500" />
@@ -712,16 +908,41 @@ export default function LearningModule({
                   Reviews periódicas de Project Managers y KPIs de entrega para mitigar subjetividad.
                 </p>
               </div>
-              {isCheckpointAuthorized && (
+              <div className="flex items-center gap-2 shrink-0">
                 <button
-                  id="add-checkpoint-btn"
-                  onClick={() => setShowAddCheckpoint(!showAddCheckpoint)}
-                  className="bg-indigo-50 text-indigo-600 border border-indigo-100 font-semibold px-2.5 py-1 text-xs rounded hover:bg-indigo-100 transition"
+                  type="button"
+                  id="toggle-career-guide-btn"
+                  onClick={() => setIsCareerGuideExpanded(!isCareerGuideExpanded)}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded border transition whitespace-nowrap shrink-0 ${
+                    isCareerGuideExpanded
+                      ? 'bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700'
+                      : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                  }`}
+                  title={isCareerGuideExpanded ? 'Ocultar Guía de Carreras' : 'Mostrar Guía de Carreras'}
                 >
-                  + Nuevo Checkpoint
+                  <GraduationCap className="h-3.5 w-3.5 shrink-0" />
+                  <span>Guía de Carreras</span>
+                  {isCareerGuideExpanded ? (
+                    <ChevronUp className="h-3.5 w-3.5 shrink-0" />
+                  ) : (
+                    <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+                  )}
                 </button>
-              )}
+                {isCheckpointAuthorized && (
+                  <button
+                    id="add-checkpoint-btn"
+                    onClick={() => setShowAddCheckpoint(!showAddCheckpoint)}
+                    className="bg-indigo-50 text-indigo-600 border border-indigo-100 font-semibold px-2.5 py-1 text-xs rounded hover:bg-indigo-100 transition whitespace-nowrap shrink-0"
+                  >
+                    + Nuevo Checkpoint
+                  </button>
+                )}
+              </div>
             </div>
+
+            {isCareerGuideExpanded && !showAddCheckpoint && !editingCheckpointId && (
+              renderCareerGuidePanel(selectedEmployee, true)
+            )}
 
             {showAddCheckpoint && (() => {
               const selectedEmpForCheckpoint = employees.find(e => e.employeeId === newCheckpoint.employeeId);
@@ -929,11 +1150,14 @@ export default function LearningModule({
 
             <div className="space-y-4">
               {(() => {
-                const filtered = checkpoints
-                  .filter(cp => cp.employeeId === selectedEmpId)
-                  .sort((a, b) => new Date(a.reviewDate).getTime() - new Date(b.reviewDate).getTime());
+                const employeeCheckpoints = checkpoints.filter(cp => cp.employeeId === selectedEmpId);
+                const chronologicalCheckpoints = sortCheckpointsChronological(employeeCheckpoints);
+                const displayCheckpoints = sortCheckpointsNewestFirst(chronologicalCheckpoints);
+                const scoreDrops = computeCompetencyScoreDrops(chronologicalCheckpoints);
+                const dropsByCheckpoint = groupDropsByCheckpoint(scoreDrops);
+                const dropByCpAndComp = indexDropsByCheckpointAndCompetency(scoreDrops);
 
-                if (filtered.length === 0) {
+                if (chronologicalCheckpoints.length === 0) {
                   return (
                     <div className="text-center p-8 bg-slate-50 border border-slate-200/60 rounded-xl text-slate-500">
                       <ClipboardCheck className="mx-auto h-8 w-8 text-slate-300 mb-2" />
@@ -943,18 +1167,26 @@ export default function LearningModule({
                   );
                 }
 
-                const progressionPoints = filtered.map((cp) => {
+                const levelTargetScore = selectedEmployee
+                  ? getLevelTargetScore(selectedEmployee.currentLevelId)
+                  : 3.0;
+
+                const progressionPoints = chronologicalCheckpoints.map((cp) => {
                   const avgScore = cp.scores.length > 0
                     ? cp.scores.reduce((acc, s) => acc + s.score, 0) / cp.scores.length
                     : 0;
                   const avgKpi = cp.kpis.length > 0
                     ? cp.kpis.reduce((acc, k) => acc + k.currentValue, 0) / cp.kpis.length
                     : 0;
+                  const avgKpiTarget = cp.kpis.length > 0
+                    ? cp.kpis.reduce((acc, k) => acc + k.targetValue, 0) / cp.kpis.length
+                    : levelTargetScore;
                   return {
                     id: cp.id,
                     date: cp.reviewDate,
                     avgScore,
                     avgKpi,
+                    avgKpiTarget,
                     stage: scoreToStage(avgScore)
                   };
                 });
@@ -965,7 +1197,7 @@ export default function LearningModule({
 
                 return (
                   <>
-                    {filtered.length >= 2 && (
+                    {chronologicalCheckpoints.length >= 2 && (
                       <div className="border border-slate-200 rounded-lg p-3.5 bg-slate-50/70 space-y-2.5">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <span className="text-xs font-semibold text-slate-900 flex items-center gap-1.5">
@@ -985,15 +1217,17 @@ export default function LearningModule({
                                 #{idx + 1} · {pt.date}
                               </div>
                               <div className="flex items-baseline justify-between">
-                                <span className="text-xs font-bold font-mono tabular-nums text-slate-900">
-                                  {pt.avgScore.toFixed(2)}/5
+                                <span className={`text-xs font-bold font-mono tabular-nums ${
+                                  pt.avgScore >= levelTargetScore ? 'text-emerald-700' : 'text-slate-900'
+                                }`}>
+                                  {pt.avgScore.toFixed(2)} <span className="text-slate-400 font-normal">/ {levelTargetScore.toFixed(2)}</span>
                                 </span>
                                 <span className="text-[11px] font-semibold text-indigo-700">
                                   Etapa {pt.stage.toLowerCase()}
                                 </span>
                               </div>
                               <div className="text-[10px] text-slate-400 font-mono tabular-nums">
-                                KPI med: {pt.avgKpi.toFixed(1)}/5
+                                KPI med: {pt.avgKpi.toFixed(1)} / {pt.avgKpiTarget.toFixed(1)}
                               </div>
                             </div>
                           ))}
@@ -1001,9 +1235,10 @@ export default function LearningModule({
                       </div>
                     )}
 
-                    {filtered.map((cp) => {
+                    {displayCheckpoints.map((cp) => {
                   const emp = employees.find(e => e.employeeId === cp.employeeId);
                   const isEditing = editingCheckpointId === cp.id && editingCheckpoint;
+                  const cpDrops = dropsByCheckpoint.get(cp.id) || [];
                   
                   if (isEditing) {
                     return (
@@ -1236,14 +1471,30 @@ export default function LearningModule({
                   }
 
                   return (
-                    <div key={cp.id} className="border border-slate-150 rounded-xl p-3 bg-slate-50/30">
-                      <div className="flex justify-between items-start border-b border-slate-100 pb-2 mb-2">
+                    <div
+                      key={cp.id}
+                      className={`border rounded-xl p-3 ${
+                        cpDrops.length > 0
+                          ? 'border-rose-200 bg-rose-50/20'
+                          : 'border-slate-150 bg-slate-50/30'
+                      }`}
+                    >
+                      <div className="flex justify-between items-start border-b border-slate-100 pb-2 mb-2 gap-2">
                         <div>
-                          <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider bg-slate-200 px-1 py-0.5 rounded">
-                            {cp.reviewType} Review
-                          </span>
-                          <h4 className="text-xs font-bold text-slate-900 mt-1">
-                            {emp ? `${emp.name} ${emp.surname}` : 'Colaborador Genérico'}
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider bg-slate-200 px-1 py-0.5 rounded">
+                              {cp.reviewType} Review
+                            </span>
+                            {cpDrops.length > 0 && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded">
+                                <AlertTriangle className="h-3 w-3 text-rose-600 shrink-0" />
+                                Alerta descenso ({cpDrops.length})
+                              </span>
+                            )}
+                          </div>
+                          <h4 className="text-xs font-bold text-slate-900 mt-1 inline-flex items-center gap-1.5">
+                            <span>{emp ? `${emp.name} ${emp.surname}` : 'Colaborador Genérico'}</span>
+                            <EmployeeRecognitionIcons employee={emp} size="xs" />
                           </h4>
                           <p className="text-[10px] text-slate-400">Evaluado en: {cp.reviewDate}</p>
                         </div>
@@ -1262,6 +1513,35 @@ export default function LearningModule({
                           )}
                         </div>
                       </div>
+
+                      {cpDrops.length > 0 && (
+                        <div
+                          role="alert"
+                          className="mb-2.5 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2 text-xs text-rose-900 flex items-start gap-2"
+                        >
+                          <AlertTriangle className="h-4 w-4 text-rose-600 shrink-0 mt-0.5" />
+                          <div className="space-y-1 min-w-0">
+                            <div className="font-bold text-rose-800">
+                              Alerta: descenso en {cpDrops.length}{' '}
+                              {cpDrops.length === 1 ? 'competencia' : 'competencias'} respecto al checkpoint anterior
+                            </div>
+                            <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-rose-700">
+                              {cpDrops.map(d => {
+                                const compName =
+                                  competencies.find(c => c.id === d.competencyId)?.name || d.competencyId;
+                                return (
+                                  <span key={d.competencyId} className="font-medium">
+                                    {compName}:{' '}
+                                    <span className="font-mono font-bold tabular-nums">
+                                      {d.previousScore.toFixed(1)} → {d.currentScore.toFixed(1)} ({d.delta.toFixed(1)})
+                                    </span>
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                      )}
 
                       <p className="text-xs text-slate-700 italic bg-white p-2 rounded border border-slate-200/50">
                         "{cp.comments}"
@@ -1292,12 +1572,27 @@ export default function LearningModule({
                               const targetVal = emp ? getTargetScoreForLevelAndCompetency(emp.currentLevelId, s.competencyId) : 3;
                               const isMet = s.score >= targetVal;
                               const reqStage = emp ? getRequiredStage(emp.currentCareerPathId, emp.currentLevelId, s.competencyId) : 'B';
+                              const drop = dropByCpAndComp.get(`${cp.id}::${s.competencyId}`);
                               return (
-                                <span key={s.competencyId} className={`text-[10px] border px-2 py-0.5 rounded-full font-semibold flex items-center gap-1.5 ${
-                                  isMet ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-rose-50 text-rose-800 border-rose-200'
-                                }`}>
+                                <span
+                                  key={s.competencyId}
+                                  title={
+                                    drop
+                                      ? `Descenso respecto al checkpoint anterior (${drop.previousReviewDate}): ${drop.previousScore.toFixed(1)} → ${drop.currentScore.toFixed(1)}`
+                                      : undefined
+                                  }
+                                  className={`text-[10px] border px-2 py-0.5 rounded-full font-semibold flex items-center gap-1.5 ${
+                                    isMet ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-rose-50 text-rose-800 border-rose-200'
+                                  } ${drop ? 'ring-1 ring-rose-400' : ''}`}
+                                >
                                   <span>{compName}:</span>
                                   <strong className="font-bold text-slate-950">{s.score}</strong>
+                                  {drop && (
+                                    <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-rose-700 bg-rose-100 px-1 rounded">
+                                      <TrendingDown className="h-2.5 w-2.5" />
+                                      {drop.delta.toFixed(1)}
+                                    </span>
+                                  )}
                                   {s.stage && (
                                     <span className="text-[9px] bg-indigo-50 text-indigo-700 px-1 py-0.2 rounded font-bold uppercase border border-indigo-100">
                                       {s.stage}

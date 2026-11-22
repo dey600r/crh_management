@@ -1,13 +1,15 @@
 import { useState, useEffect, useMemo } from 'react';
 import { 
-  Award, ShieldCheck, FileText, CheckCircle, HelpCircle, ArrowRight, Sparkles, Send, AlertTriangle, Scale, Lock, Plus, Users, ChevronDown, ChevronUp, TrendingUp, Filter 
+  Award, ShieldCheck, FileText, CheckCircle, HelpCircle, ArrowRight, Sparkles, Send, AlertTriangle, Scale, Lock, Plus, Users, ChevronDown, ChevronUp, TrendingUp, Filter, Search, X, Info 
 } from 'lucide-react';
 import { AnnualEvaluation, Employee, CheckpointReview, DivisionBudget, UserRole, CompetencyStage, getRequiredStage, scoreToStage, stageToScore, getLevelTargetScore } from '../types';
 import { MarkdownView } from './MarkdownView';
 import CheckpointProgressChart from './CheckpointProgressChart';
 import TruncatedTooltip from './TruncatedTooltip';
 import DivisionBudgetSection from './DivisionBudgetSection';
+import EmployeeRecognitionIcons from './EmployeeRecognitionIcons';
 import {
+  MIN_SALARY_RAISE_EUR,
   SALARY_RAISE_STEP_EUR,
   computeDivisionSalaryRecommendation,
   formatWholeEur,
@@ -52,9 +54,26 @@ export default function PerformanceModule({
   const [expandedCheckpoints, setExpandedCheckpoints] = useState<Record<string, boolean>>({});
   const [isFormulaExpanded, setIsFormulaExpanded] = useState(false);
 
-  // Independent division dropdown filters
+  // Independent division dropdown & collaborator search filters
   const [evalDivisionFilter, setEvalDivisionFilter] = useState<string>('ALL');
+  const [evalSearchQuery, setEvalSearchQuery] = useState<string>('');
   const [unassignedDivisionFilter, setUnassignedDivisionFilter] = useState<string>('ALL');
+  const [unassignedSearchQuery, setUnassignedSearchQuery] = useState<string>('');
+
+  const matchesEmployeeSearch = (emp: Employee | undefined, rawQuery: string): boolean => {
+    const normalizedQuery = rawQuery
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+    if (!normalizedQuery) return true;
+    if (!emp) return false;
+    const fullName = `${emp.name} ${emp.surname}`
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+    return fullName.includes(normalizedQuery) || emp.employeeId.toLowerCase().includes(normalizedQuery);
+  };
 
   const availableDivisions = useMemo(() => {
     const set = new Set<string>();
@@ -339,20 +358,59 @@ export default function PerformanceModule({
         {/* Left Column: Annual Evaluations Table */}
         <div className="lg:col-span-5 space-y-6">
           <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-4">
-            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5 min-w-0">
                 <FileText className="h-4 w-4 text-indigo-600 shrink-0" />
-                Ciclo Anual de Evaluación
+                <span className="truncate">Ciclo Anual de Evaluación</span>
+                <TruncatedTooltip
+                  text="Selecciona una fila para evaluar dimensiones, comparar contra comités de calibración y generar informes por IA."
+                  onlyWhenTruncated={false}
+                  className="inline-flex items-center shrink-0"
+                >
+                  <button
+                    type="button"
+                    aria-label="Información sobre Ciclo Anual de Evaluación"
+                    className="text-blue-600 hover:text-blue-700 focus:text-blue-700 focus:outline-none p-0.5 rounded-full transition-colors"
+                  >
+                    <Info className="h-3.5 w-3.5" />
+                  </button>
+                </TruncatedTooltip>
               </h3>
-              <div className="flex items-center gap-1.5">
-                <Filter className="h-3.5 w-3.5 text-slate-400 shrink-0" aria-hidden="true" />
+            </div>
+
+            {/* Buscador por colaborador y filtro por división al mismo nivel */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 mb-3">
+              <div className="relative flex-1 min-w-0">
+                <Search className="h-3.5 w-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" aria-hidden="true" />
+                <input
+                  type="text"
+                  aria-label="Buscar evaluación por colaborador o ID"
+                  value={evalSearchQuery}
+                  onChange={e => setEvalSearchQuery(e.target.value)}
+                  placeholder="Buscar colaborador..."
+                  className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg pl-8 pr-7 py-1.5 text-slate-700 placeholder:text-slate-400 focus:outline-none focus:bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                />
+                {evalSearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setEvalSearchQuery('')}
+                    aria-label="Limpiar búsqueda de evaluaciones"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+              <div className="relative sm:w-[165px] shrink-0">
+                <Filter className="h-3.5 w-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" aria-hidden="true" />
                 <select
                   aria-label="Filtrar evaluaciones por división"
                   value={evalDivisionFilter}
                   onChange={e => setEvalDivisionFilter(e.target.value)}
-                  className="text-xs bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-slate-700 font-medium focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 max-w-[190px]"
+                  title={evalDivisionFilter === 'ALL' ? 'Divisiones...' : evalDivisionFilter}
+                  className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg pl-8 pr-2 py-1.5 text-slate-700 font-medium focus:outline-none focus:bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 truncate"
                 >
-                  <option value="ALL">Todas las divisiones</option>
+                  <option value="ALL">Divisiones...</option>
                   {availableDivisions.map(div => (
                     <option key={div} value={div}>
                       {div}
@@ -361,21 +419,20 @@ export default function PerformanceModule({
                 </select>
               </div>
             </div>
-            <p className="text-xs text-slate-500 mb-4">
-              Selecciona una fila para evaluar dimensiones, comparar contra comités de calibración y generar informes por IA.
-            </p>
 
             {(() => {
               const filteredEvaluations = evaluations.filter(ev => {
-                if (evalDivisionFilter === 'ALL') return true;
                 const emp = employees.find(e => e.employeeId === ev.employeeId);
-                return emp ? getEmployeeDivision(emp) === evalDivisionFilter : false;
+                if (evalDivisionFilter !== 'ALL') {
+                  if (!emp || getEmployeeDivision(emp) !== evalDivisionFilter) return false;
+                }
+                return matchesEmployeeSearch(emp, evalSearchQuery);
               });
 
               if (filteredEvaluations.length === 0) {
                 return (
                   <p className="text-xs text-slate-400 italic bg-slate-50 p-3 rounded-lg border border-slate-200">
-                    No hay evaluaciones registradas para la división seleccionada.
+                    No hay evaluaciones registradas que coincidan con los filtros seleccionados.
                   </p>
                 );
               }
@@ -404,10 +461,13 @@ export default function PerformanceModule({
                       >
                         <div className="flex justify-between items-start gap-2 w-full">
                           <div className="min-w-0 flex-1">
-                            <TruncatedTooltip
-                              text={emp ? `${emp.name} ${emp.surname}` : 'Colaborador Genérico'}
-                              className="font-bold text-slate-950 text-xs truncate block"
-                            />
+                            <div className="flex items-center gap-1 min-w-0">
+                              <TruncatedTooltip
+                                text={emp ? `${emp.name} ${emp.surname}` : 'Colaborador Genérico'}
+                                className="font-bold text-slate-950 text-xs truncate block min-w-0"
+                              />
+                              <EmployeeRecognitionIcons employee={emp} size="xs" />
+                            </div>
                             <TruncatedTooltip
                               text={`${careerPaths.find(p => p.id === emp?.currentCareerPathId)?.name || ''} · Div: ${emp?.division || emp?.department || 'N/A'} · Ciclo ${ev.year}`}
                               className="text-[10px] text-slate-500 mt-0.5 truncate block"
@@ -439,26 +499,72 @@ export default function PerformanceModule({
           {/* Card: Colaboradores sin Evaluación Activa */}
           {(() => {
             const allUnassigned = employees.filter(emp => !evaluations.some(ev => ev.employeeId === emp.employeeId));
-            const filteredUnassigned = allUnassigned.filter(emp =>
-              unassignedDivisionFilter === 'ALL' || getEmployeeDivision(emp) === unassignedDivisionFilter
-            );
+            const filteredUnassigned = allUnassigned.filter(emp => {
+              if (unassignedDivisionFilter !== 'ALL' && getEmployeeDivision(emp) !== unassignedDivisionFilter) {
+                return false;
+              }
+              return matchesEmployeeSearch(emp, unassignedSearchQuery);
+            });
 
             return (
               <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-                  <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <div className="flex items-center justify-between gap-2 mb-3">
+                  <h3 className="text-[13px] xl:text-sm font-bold text-slate-900 flex items-center gap-1.5 min-w-0 flex-1">
                     <Users className="h-4 w-4 text-indigo-600 shrink-0" />
-                    Colaboradores sin Evaluación Anual ({filteredUnassigned.length})
+                    <TruncatedTooltip
+                      text="Colaboradores sin Evaluación Anual"
+                      className="truncate min-w-0"
+                    />
+                    <span className="shrink-0 tabular-nums">({filteredUnassigned.length})</span>
+                    <TruncatedTooltip
+                      text={'Estos colaboradores están registrados en la plantilla pero no tienen abierto un expediente para el ciclo actual. Haz clic en "Iniciar" para abrir su proceso.'}
+                      onlyWhenTruncated={false}
+                      className="inline-flex items-center shrink-0"
+                    >
+                      <button
+                        type="button"
+                        aria-label="Información sobre Colaboradores sin Evaluación Anual"
+                        className="text-blue-600 hover:text-blue-700 focus:text-blue-700 focus:outline-none p-0.5 rounded-full transition-colors"
+                      >
+                        <Info className="h-3.5 w-3.5" />
+                      </button>
+                    </TruncatedTooltip>
                   </h3>
-                  <div className="flex items-center gap-1.5">
-                    <Filter className="h-3.5 w-3.5 text-slate-400 shrink-0" aria-hidden="true" />
+                </div>
+
+                {/* Buscador por colaborador y filtro por división al mismo nivel */}
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 mb-3">
+                  <div className="relative flex-1 min-w-0">
+                    <Search className="h-3.5 w-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" aria-hidden="true" />
+                    <input
+                      type="text"
+                      aria-label="Buscar colaborador sin evaluación por nombre o ID"
+                      value={unassignedSearchQuery}
+                      onChange={e => setUnassignedSearchQuery(e.target.value)}
+                      placeholder="Buscar colaborador..."
+                      className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg pl-8 pr-7 py-1.5 text-slate-700 placeholder:text-slate-400 focus:outline-none focus:bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                    />
+                    {unassignedSearchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => setUnassignedSearchQuery('')}
+                        aria-label="Limpiar búsqueda de colaboradores sin evaluación"
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                  <div className="relative sm:w-[165px] shrink-0">
+                    <Filter className="h-3.5 w-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" aria-hidden="true" />
                     <select
                       aria-label="Filtrar colaboradores sin evaluación por división"
                       value={unassignedDivisionFilter}
                       onChange={e => setUnassignedDivisionFilter(e.target.value)}
-                      className="text-xs bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-slate-700 font-medium focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 max-w-[190px]"
+                      title={unassignedDivisionFilter === 'ALL' ? 'Divisiones...' : unassignedDivisionFilter}
+                      className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg pl-8 pr-2 py-1.5 text-slate-700 font-medium focus:outline-none focus:bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 truncate"
                     >
-                      <option value="ALL">Todas las divisiones</option>
+                      <option value="ALL">Divisiones...</option>
                       {availableDivisions.map(div => (
                         <option key={div} value={div}>
                           {div}
@@ -467,14 +573,11 @@ export default function PerformanceModule({
                     </select>
                   </div>
                 </div>
-                <p className="text-xs text-slate-500 mb-3">
-                  Estos colaboradores están registrados en la plantilla pero no tienen abierto un expediente para el ciclo actual. Haz clic en "Iniciar" para abrir su proceso.
-                </p>
                 {filteredUnassigned.length === 0 ? (
                   <p className="text-xs text-slate-400 italic bg-slate-50 p-3 rounded-lg border border-slate-200">
                     {allUnassigned.length === 0
                       ? 'Todos los colaboradores tienen un proceso de evaluación abierto.'
-                      : 'No hay colaboradores sin evaluación en la división seleccionada.'}
+                      : 'No hay colaboradores sin evaluación que coincidan con los filtros seleccionados.'}
                   </p>
                 ) : (
                   <div className="space-y-2 max-h-[250px] overflow-y-auto">
@@ -489,6 +592,7 @@ export default function PerformanceModule({
                               text={`${emp.name} ${emp.surname}`}
                               className="font-bold text-slate-900 truncate block min-w-0"
                             />
+                            <EmployeeRecognitionIcons employee={emp} size="xs" />
                           </div>
                           <TruncatedTooltip
                             text={`${emp.division || emp.department} · ${careerPaths.find(p => p.id === emp.currentCareerPathId)?.name || 'Especialista'} | ${careerLevels.find(l => l.id === emp.currentLevelId)?.levelCode || ''}`}
@@ -543,17 +647,23 @@ export default function PerformanceModule({
               {/* Header card info */}
               <div className="border-b-2 border-slate-200 pb-4">
                 <div className="flex justify-between items-start">
-                  <div>
-                    <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider block">Expediente de Calibración {selectedEval.year}</span>
-                    <h3 className="text-base font-bold text-slate-900">
-                      {employees.find(e => e.employeeId === selectedEval.employeeId)?.name} {employees.find(e => e.employeeId === selectedEval.employeeId)?.surname}
-                    </h3>
-                    <p className="text-xs text-slate-500">
-                      División: <span className="font-semibold text-slate-700">{(() => { const emp = employees.find(e => e.employeeId === selectedEval.employeeId); return emp?.division || emp?.department || 'Sin asignar'; })()}</span>
-                      <span aria-hidden="true" className="mx-1.5">·</span>
-                      Fase Actual del Proceso: <span className="text-indigo-700 font-semibold">{selectedEval.status}</span>
-                    </p>
-                  </div>
+                  {(() => {
+                    const selectedEmpHeader = employees.find(e => e.employeeId === selectedEval.employeeId);
+                    return (
+                      <div>
+                        <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider block">Expediente de Calibración {selectedEval.year}</span>
+                        <h3 className="text-base font-bold text-slate-900 inline-flex items-center gap-1.5">
+                          <span>{selectedEmpHeader?.name} {selectedEmpHeader?.surname}</span>
+                          <EmployeeRecognitionIcons employee={selectedEmpHeader} size="sm" />
+                        </h3>
+                        <p className="text-xs text-slate-500">
+                          División: <span className="font-semibold text-slate-700">{selectedEmpHeader?.division || selectedEmpHeader?.department || 'Sin asignar'}</span>
+                          <span aria-hidden="true" className="mx-1.5">·</span>
+                          Fase Actual del Proceso: <span className="text-indigo-700 font-semibold">{selectedEval.status}</span>
+                        </p>
+                      </div>
+                    );
+                  })()}
                   <button
                     onClick={() => setSelectedEval(null)}
                     className="text-xs text-slate-400 hover:text-slate-600"
@@ -717,13 +827,18 @@ export default function PerformanceModule({
                                         <div className="space-y-1">
                                           {chk.scores.map(sc => {
                                             const compName = competencies.find(c => c.id === sc.competencyId)?.name || sc.competencyId;
+                                            const meetsCompTarget = sc.score >= requiredLevelScore;
                                             return (
                                               <div key={sc.competencyId} className="text-[10px] flex justify-between items-center gap-2 bg-white px-2 py-1 rounded border border-slate-150">
                                                 <TruncatedTooltip
                                                   text={compName}
                                                   className="text-slate-500 truncate max-w-[130px] font-medium block min-w-0"
                                                 />
-                                                <strong className="text-indigo-600 font-bold bg-indigo-50 px-1 py-0.5 rounded shrink-0">{sc.score}/5</strong>
+                                                <strong className={`font-bold font-mono tabular-nums px-1.5 py-0.5 rounded shrink-0 ${
+                                                  meetsCompTarget ? 'text-emerald-700 bg-emerald-50' : 'text-amber-700 bg-amber-50'
+                                                }`}>
+                                                  {sc.score.toFixed(1)} / {requiredLevelScore.toFixed(1)}
+                                                </strong>
                                               </div>
                                             );
                                           })}
@@ -1078,7 +1193,7 @@ export default function PerformanceModule({
                         Recomendación de Subida Salarial — {rec.division}
                       </h4>
                       <p className="text-[11px] text-slate-500 mt-0.5">
-                        Reparto ponderado por nota final y promoción en incrementos de {SALARY_RAISE_STEP_EUR} € (subida garantizada en promociones)
+                        Reparto ponderado por nota final, promoción, Alto Potencial y Key person · subida mínima de {MIN_SALARY_RAISE_EUR} € e incrementos de {SALARY_RAISE_STEP_EUR} €
                       </p>
                     </div>
 
@@ -1101,9 +1216,9 @@ export default function PerformanceModule({
                           </div>
                         )}
                       </div>
-                    ) : rec.budgetEur === null || rec.budgetEur < SALARY_RAISE_STEP_EUR ? (
+                    ) : rec.budgetEur === null || rec.budgetEur < MIN_SALARY_RAISE_EUR ? (
                       <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 text-xs text-slate-600">
-                        Todas las evaluaciones de <strong>{rec.division}</strong> están cerradas, pero no hay un presupuesto configurado (mínimo {SALARY_RAISE_STEP_EUR} €) para calcular la recomendación.
+                        Todas las evaluaciones de <strong>{rec.division}</strong> están cerradas, pero no hay un presupuesto configurado (mínimo {MIN_SALARY_RAISE_EUR} €) para calcular la recomendación.
                       </div>
                     ) : selectedItem ? (
                       <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 flex flex-wrap items-center justify-between gap-3">
@@ -1114,13 +1229,28 @@ export default function PerformanceModule({
                           <p className="text-xs text-emerald-900 mt-0.5">
                             {selectedItem.rationale} · Nota <span className="font-mono font-bold">{selectedItem.finalScore.toFixed(2)}/5</span>
                             {selectedItem.isPromoted ? ' · Con promoción' : ''}
+                            {selectedItem.isHighPotential ? ' · Alto Potencial' : ''}
+                            {selectedItem.isKeyPerson ? ' · Key person' : ''}
                           </p>
                         </div>
                         <div className="text-right font-mono tabular-nums">
-                          <span className="text-lg font-extrabold text-emerald-700 block leading-tight">
-                            {formatWholeEur(selectedItem.recommendedRaiseEur)}
-                          </span>
-                          <span className="text-[10px] text-emerald-700/80 font-semibold">
+                          <div className="flex items-baseline justify-end gap-2">
+                            <span className="text-lg font-extrabold text-emerald-700 leading-tight">
+                              {formatWholeEur(selectedItem.recommendedRaiseEur)}
+                            </span>
+                            <span
+                              className={`text-xs font-bold px-1.5 py-0.5 rounded border ${
+                                selectedItem.recommendedRaiseEur > 0
+                                  ? 'text-emerald-700 bg-emerald-100/90 border-emerald-200'
+                                  : 'text-slate-500 bg-slate-100 border-slate-200'
+                              }`}
+                            >
+                              {selectedItem.recommendedRaiseEur > 0
+                                ? `+${selectedItem.salaryRaisePercent.toFixed(1)}%`
+                                : '0.0%'}
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-emerald-700/80 font-semibold block mt-0.5">
                             {selectedItem.sharePercent.toFixed(1)}% del reparto · {formatEvalResultLabel(selectedItem.evaluationResult)}
                           </span>
                         </div>

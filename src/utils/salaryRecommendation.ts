@@ -1,6 +1,12 @@
-import { AnnualEvaluation, DivisionBudget, Employee } from '../types';
+import { AnnualEvaluation, DivisionBudget, Employee, getDefaultSalaryForLevel } from '../types';
 
 export const SALARY_RAISE_STEP_EUR = 50;
+export const MIN_SALARY_RAISE_EUR = 500;
+export const MIN_RAISE_UNITS = MIN_SALARY_RAISE_EUR / SALARY_RAISE_STEP_EUR;
+
+export const HIGH_POTENTIAL_WEIGHT_MULTIPLIER = 1.2;
+export const REFERENCE_SALARY_EUR = 35000;
+export const SALARY_WEIGHT_EXPONENT = 0.25;
 
 export interface SalaryRaiseAllocationItem {
   employee: Employee;
@@ -8,9 +14,12 @@ export interface SalaryRaiseAllocationItem {
   finalScore: number;
   evaluationResult: AnnualEvaluation['evaluationResult'];
   isPromoted: boolean;
+  isHighPotential: boolean;
+  isKeyPerson: boolean;
   weight: number;
   sharePercent: number;
   recommendedRaiseEur: number;
+  salaryRaisePercent: number;
   rationale: string;
 }
 
@@ -31,6 +40,8 @@ export interface DivisionSalaryRecommendation {
   totalAllocatedEur: number;
   unallocatedRemainderEur: number;
   promotedCount: number;
+  highPotentialCount: number;
+  keyPersonCount: number;
   items: SalaryRaiseAllocationItem[];
 }
 
@@ -84,6 +95,18 @@ const getResultMultiplier = (result: AnnualEvaluation['evaluationResult']): numb
     default:
       return 1.0;
   }
+};
+
+export const getEffectiveEmployeeSalary = (emp: Pick<Employee, 'salaryEur' | 'currentLevelId'>): number => {
+  if (typeof emp.salaryEur === 'number' && Number.isFinite(emp.salaryEur) && emp.salaryEur > 0) {
+    return emp.salaryEur;
+  }
+  return getDefaultSalaryForLevel(emp.currentLevelId);
+};
+
+export const getSalaryWeightFactor = (salaryEur: number): number => {
+  const ratio = Math.min(2.5, Math.max(0.5, salaryEur / REFERENCE_SALARY_EUR));
+  return Math.pow(ratio, SALARY_WEIGHT_EXPONENT);
 };
 
 export function computeDivisionSalaryRecommendationByName(
@@ -144,7 +167,7 @@ export function computeDivisionSalaryRecommendationByName(
   const totalEmployees = divisionEmployees.length;
   const isDivisionClosed = totalEmployees > 0 && pendingEmployees.length === 0;
 
-  if (!isDivisionClosed || budgetEur === null || budgetEur < SALARY_RAISE_STEP_EUR) {
+  if (!isDivisionClosed || budgetEur === null || budgetEur < MIN_SALARY_RAISE_EUR) {
     return {
       division,
       budgetEur,
@@ -156,31 +179,62 @@ export function computeDivisionSalaryRecommendationByName(
       totalAllocatedEur: 0,
       unallocatedRemainderEur: budgetEur !== null ? Number(budgetEur.toFixed(2)) : 0,
       promotedCount: 0,
+      highPotentialCount: 0,
+      keyPersonCount: 0,
       items: []
     };
   }
 
-  // Compute weights factoring in final score, result tier, and mandatory promotion raise rule
+  // Compute weights factoring in final score, result tier, promotion, High Potential / Key person, and mild salary scale
   const scoredRows = divisionEmployees.map(emp => {
     const ev = evalByEmployee.get(emp.employeeId)!;
     const score = Number(ev.finalScore) || 0;
+    const effectiveSalary = getEffectiveEmployeeSalary(emp);
+    const salaryFactor = getSalaryWeightFactor(effectiveSalary);
     const isPromoted =
       Boolean(ev.promotionRecommendation?.ready) || ev.evaluationResult === 'Promoted';
+    const isHighPotential =
+      Array.isArray(emp.recognitions) && emp.recognitions.includes('high_potential');
+    const isKeyPerson =
+      Array.isArray(emp.recognitions) && emp.recognitions.includes('key_person');
+    const hasPriorityRecognition = isHighPotential || isKeyPerson;
+    const minUnits = isPromoted || hasPriorityRecognition ? 1 : 0;
 
     let weight = 0;
     let rationale = '';
 
-    if (score < 3.0 && !isPromoted) {
+    if (score < 3.0 && !isPromoted && !hasPriorityRecognition) {
       weight = 0;
-      rationale = 'Nota < 3,0 sin promoción';
+      rationale = 'Nota < 3,0 sin promoción, Alto Potencial ni Key person';
     } else {
       const scoreComponent = Math.max(0.5, score - 2.2);
       const resultMult = getResultMultiplier(ev.evaluationResult);
       if (isPromoted) {
         weight = (scoreComponent * resultMult + 1.8) * 1.35;
-        rationale = 'Promoción (subida obligatoria) + desempeño';
       } else {
         weight = scoreComponent * resultMult;
+      }
+
+      if (hasPriorityRecognition) {
+        weight *= HIGH_POTENTIAL_WEIGHT_MULTIPLIER;
+      }
+
+      weight *= salaryFactor;
+
+      const recognitionLabels = [
+        isHighPotential ? 'Alto Potencial' : null,
+        isKeyPerson ? 'Key person' : null
+      ]
+        .filter(Boolean)
+        .join(' + ');
+
+      if (isPromoted && recognitionLabels) {
+        rationale = `Promoción + ${recognitionLabels} (subida mínima garantizada)`;
+      } else if (isPromoted) {
+        rationale = 'Promoción (subida obligatoria) + desempeño';
+      } else if (recognitionLabels) {
+        rationale = `${recognitionLabels} (subida mínima garantizada) + desempeño`;
+      } else {
         rationale =
           ev.evaluationResult === 'Outstanding'
             ? 'Desempeño sobresaliente'
@@ -194,101 +248,134 @@ export function computeDivisionSalaryRecommendationByName(
       employee: emp,
       evaluation: ev,
       finalScore: score,
+      effectiveSalary,
       evaluationResult: ev.evaluationResult,
       isPromoted,
+      isHighPotential,
+      isKeyPerson,
+      hasPriorityRecognition,
+      minUnits,
       weight,
       rationale
     };
   });
 
   const promotedCount = scoredRows.filter(r => r.isPromoted).length;
+  const highPotentialCount = scoredRows.filter(r => r.isHighPotential).length;
+  const keyPersonCount = scoredRows.filter(r => r.isKeyPerson).length;
   let totalWeight = scoredRows.reduce((sum, r) => sum + r.weight, 0);
 
-  // Fallback if all employees scored < 3.0 without promotion while budget >= 50 EUR
-  if (totalWeight <= 0 && budgetEur >= SALARY_RAISE_STEP_EUR) {
+  // Fallback if all employees scored < 3.0 without promotion/high potential while budget >= 500 EUR
+  if (totalWeight <= 0 && budgetEur >= MIN_SALARY_RAISE_EUR) {
     scoredRows.forEach(r => {
-      r.weight = Math.max(0.5, r.finalScore);
+      r.weight = Math.max(0.5, r.finalScore) * getSalaryWeightFactor(r.effectiveSalary);
       r.rationale = 'Reparto proporcional base';
     });
     totalWeight = scoredRows.reduce((sum, r) => sum + r.weight, 0);
   }
 
-  // Discretize into minimum 50 EUR increments (no decimals)
+  // Discretize into minimum 50 EUR increments with a mandatory 500 EUR minimum raise per recipient
   const totalUnits = Math.floor(budgetEur / SALARY_RAISE_STEP_EUR);
-  const rawUnits = scoredRows.map(r =>
-    totalWeight > 0 ? (r.weight / totalWeight) * totalUnits : 0
-  );
-  const unitsList = rawUnits.map(u => Math.floor(u));
+  const unitsList = Array<number>(scoredRows.length).fill(0);
+  const rawUnits = Array<number>(scoredRows.length).fill(0);
 
-  // Guarantee at least 1 unit (50 EUR) for every promoted employee when totalUnits allows
-  if (promotedCount > 0 && totalUnits >= promotedCount) {
-    let deficit = 0;
-    for (let i = 0; i < scoredRows.length; i++) {
-      if (scoredRows[i].isPromoted && unitsList[i] < 1) {
-        deficit += 1 - unitsList[i];
-        unitsList[i] = 1;
+  const eligibleIndices = scoredRows
+    .map((r, idx) => ({ idx, r }))
+    .filter(x => x.r.weight > 0)
+    .sort(
+      (a, b) =>
+        Number(b.r.isPromoted) - Number(a.r.isPromoted) ||
+        Number(b.r.hasPriorityRecognition) - Number(a.r.hasPriorityRecognition) ||
+        b.r.weight - a.r.weight ||
+        b.r.finalScore - a.r.finalScore
+    );
+
+  const maxRecipients = Math.floor(totalUnits / MIN_RAISE_UNITS);
+  const fundedIndices = eligibleIndices.slice(0, maxRecipients).map(x => x.idx);
+
+  if (eligibleIndices.length > maxRecipients) {
+    for (const excluded of eligibleIndices.slice(maxRecipients)) {
+      scoredRows[excluded.idx].rationale = `Presupuesto insuficiente para subida mínima de ${MIN_SALARY_RAISE_EUR} €`;
+    }
+  }
+
+  if (fundedIndices.length > 0 && totalUnits >= MIN_RAISE_UNITS) {
+    const unlocked = new Set<number>(fundedIndices);
+    let remainingUnits = totalUnits;
+
+    // Iterative floor locking: guarantee >= 500 EUR (10 x 50 EUR) for every funded employee
+    while (unlocked.size > 0) {
+      let unlockedWeight = 0;
+      for (const idx of unlocked) {
+        unlockedWeight += scoredRows[idx].weight;
+      }
+
+      const toLock: number[] = [];
+      for (const idx of unlocked) {
+        const share =
+          unlockedWeight > 0
+            ? (scoredRows[idx].weight / unlockedWeight) * remainingUnits
+            : remainingUnits / unlocked.size;
+        rawUnits[idx] = share;
+        if (share < MIN_RAISE_UNITS) {
+          toLock.push(idx);
+        }
+      }
+
+      if (toLock.length === 0) {
+        break;
+      }
+
+      for (const idx of toLock) {
+        unitsList[idx] = MIN_RAISE_UNITS;
+        unlocked.delete(idx);
+        remainingUnits -= MIN_RAISE_UNITS;
       }
     }
-    if (deficit > 0) {
-      const donors = scoredRows
-        .map((r, idx) => ({
-          idx,
-          avail: unitsList[idx] - (r.isPromoted ? 1 : 0)
-        }))
-        .filter(d => d.avail > 0)
-        .sort((a, b) => b.avail - a.avail);
 
-      for (const donor of donors) {
-        if (deficit <= 0) break;
-        const take = Math.min(deficit, donor.avail);
-        unitsList[donor.idx] -= take;
-        deficit -= take;
+    if (unlocked.size > 0) {
+      let allocatedUnlocked = 0;
+      for (const idx of unlocked) {
+        const floorVal = Math.max(MIN_RAISE_UNITS, Math.floor(rawUnits[idx]));
+        unitsList[idx] = floorVal;
+        allocatedUnlocked += floorVal;
+      }
+
+      let remainderUnits = remainingUnits - allocatedUnlocked;
+      if (remainderUnits > 0) {
+        const orderedByRemainder = Array.from(unlocked)
+          .map(idx => ({
+            idx,
+            rem: rawUnits[idx] - Math.floor(rawUnits[idx]),
+            weight: scoredRows[idx].weight,
+            score: scoredRows[idx].finalScore
+          }))
+          .sort((a, b) => b.rem - a.rem || b.weight - a.weight || b.score - a.score);
+
+        let cursor = 0;
+        while (remainderUnits > 0 && orderedByRemainder.length > 0) {
+          const targetIdx = orderedByRemainder[cursor % orderedByRemainder.length].idx;
+          unitsList[targetIdx] += 1;
+          remainderUnits -= 1;
+          cursor += 1;
+        }
+      }
+    } else if (remainingUnits > 0) {
+      const orderedFunded = [...fundedIndices].sort(
+        (a, b) =>
+          scoredRows[b].weight - scoredRows[a].weight ||
+          scoredRows[b].finalScore - scoredRows[a].finalScore
+      );
+      let cursor = 0;
+      while (remainingUnits > 0 && orderedFunded.length > 0) {
+        unitsList[orderedFunded[cursor % orderedFunded.length]] += 1;
+        remainingUnits -= 1;
+        cursor += 1;
       }
     }
   }
 
-  // Distribute remaining 50 EUR units by largest fractional remainder (Hamilton method)
-  let allocatedUnits = unitsList.reduce((sum, u) => sum + u, 0);
-  let remainderUnits = totalUnits - allocatedUnits;
-
-  if (remainderUnits > 0 && scoredRows.length > 0) {
-    const orderedByRemainder = scoredRows
-      .map((r, idx) => ({
-        idx,
-        rem: rawUnits[idx] - Math.floor(rawUnits[idx]),
-        weight: r.weight,
-        score: r.finalScore
-      }))
-      .filter(x => x.weight > 0 || totalWeight <= 0)
-      .sort((a, b) => b.rem - a.rem || b.weight - a.weight || b.score - a.score);
-
-    let cursor = 0;
-    while (remainderUnits > 0 && orderedByRemainder.length > 0) {
-      const targetIdx = orderedByRemainder[cursor % orderedByRemainder.length].idx;
-      unitsList[targetIdx] += 1;
-      remainderUnits -= 1;
-      cursor += 1;
-    }
-  } else if (remainderUnits < 0 && scoredRows.length > 0) {
-    // Safety guard in case allocatedUnits exceeded totalUnits
-    const donors = scoredRows
-      .map((r, idx) => ({
-        idx,
-        avail: unitsList[idx] - (r.isPromoted ? 1 : 0)
-      }))
-      .filter(d => d.avail > 0)
-      .sort((a, b) => b.avail - a.avail);
-
-    let excess = -remainderUnits;
-    for (const donor of donors) {
-      if (excess <= 0) break;
-      const take = Math.min(excess, donor.avail);
-      unitsList[donor.idx] -= take;
-      excess -= take;
-    }
-  }
-
-  allocatedUnits = unitsList.reduce((sum, u) => sum + u, 0);
+  const allocatedUnits = unitsList.reduce((sum, u) => sum + u, 0);
   const totalAllocatedEur = allocatedUnits * SALARY_RAISE_STEP_EUR;
   const unallocatedRemainderEur = Number((budgetEur - totalAllocatedEur).toFixed(2));
 
@@ -297,15 +384,20 @@ export function computeDivisionSalaryRecommendationByName(
       const raiseEur = unitsList[idx] * SALARY_RAISE_STEP_EUR;
       const shareBase = totalAllocatedEur > 0 ? totalAllocatedEur : budgetEur;
       const sharePercent = shareBase > 0 ? Number(((raiseEur / shareBase) * 100).toFixed(1)) : 0;
+      const salaryRaisePercent =
+        row.effectiveSalary > 0 ? Number(((raiseEur / row.effectiveSalary) * 100).toFixed(1)) : 0;
       return {
         employee: row.employee,
         evaluation: row.evaluation,
         finalScore: row.finalScore,
         evaluationResult: row.evaluationResult,
         isPromoted: row.isPromoted,
+        isHighPotential: row.isHighPotential,
+        isKeyPerson: row.isKeyPerson,
         weight: row.weight,
         sharePercent,
         recommendedRaiseEur: raiseEur,
+        salaryRaisePercent,
         rationale: row.rationale
       };
     })
@@ -322,6 +414,8 @@ export function computeDivisionSalaryRecommendationByName(
     totalAllocatedEur,
     unallocatedRemainderEur,
     promotedCount,
+    highPotentialCount,
+    keyPersonCount,
     items
   };
 }

@@ -21,7 +21,9 @@ import {
 } from 'lucide-react';
 import { AnnualEvaluation, DivisionBudget, Employee } from '../types';
 import TruncatedTooltip from './TruncatedTooltip';
+import EmployeeRecognitionIcons from './EmployeeRecognitionIcons';
 import {
+  MIN_SALARY_RAISE_EUR,
   SALARY_RAISE_STEP_EUR,
   computeDivisionSalaryRecommendationByName,
   formatEvalResultLabel,
@@ -338,7 +340,7 @@ export default function DivisionBudgetSection({
   const handleDownloadBreakdownExcel = () => {
     if (!selectedRecommendation || !selectedRecommendation.canRecommend) return;
 
-    const headers = ['Colaborador', 'Nivel', 'Evaluación', 'Nota', '%', 'Subida (EUR)'];
+    const headers = ['Colaborador', 'Nivel', 'Evaluación', 'Nota', '% Presup.', 'Subida (EUR)', '% Subida'];
     const dataRows = selectedRecommendation.items.map(item => {
       const curLvl =
         careerLevels.find(l => l.id === item.evaluation.currentLevelId)?.levelCode ||
@@ -353,7 +355,8 @@ export default function DivisionBudgetSection({
         formatEvalResultLabel(item.evaluationResult),
         Number(item.finalScore.toFixed(2)),
         Number(item.sharePercent.toFixed(1)),
-        item.recommendedRaiseEur
+        item.recommendedRaiseEur,
+        Number(item.salaryRaisePercent.toFixed(1))
       ];
     });
 
@@ -363,7 +366,8 @@ export default function DivisionBudgetSection({
       '',
       '',
       100,
-      selectedRecommendation.totalAllocatedEur
+      selectedRecommendation.totalAllocatedEur,
+      ''
     ];
 
     const aoa = [headers, ...dataRows, totalRow];
@@ -434,6 +438,14 @@ export default function DivisionBudgetSection({
             bold: true,
             color: { rgb: item.recommendedRaiseEur > 0 ? '047857' : '64748B' }
           };
+        } else if (c === 6) {
+          cell.z = '+0.0"%";0.0"%";0.0"%"';
+          baseStyle.font = {
+            name: 'Calibri',
+            sz: 10.5,
+            bold: item.recommendedRaiseEur > 0,
+            color: { rgb: item.recommendedRaiseEur > 0 ? '047857' : '64748B' }
+          };
         }
 
         cell.s = baseStyle;
@@ -476,8 +488,9 @@ export default function DivisionBudgetSection({
       { wch: 22 },
       { wch: 22 },
       { wch: 10 },
-      { wch: 10 },
-      { wch: 16 }
+      { wch: 12 },
+      { wch: 16 },
+      { wch: 12 }
     ];
     worksheet['!rows'] = [
       { hpt: 24 },
@@ -782,7 +795,7 @@ export default function DivisionBudgetSection({
           ) : !selectedRecommendation.canRecommend ? (
             <div className="bg-white border border-slate-200 rounded-lg p-3 text-xs text-slate-600">
               Todas las evaluaciones están cerradas, pero el presupuesto debe ser de al menos{' '}
-              <span className="font-mono font-semibold">{SALARY_RAISE_STEP_EUR} €</span> para generar el reparto.
+              <span className="font-mono font-semibold">{MIN_SALARY_RAISE_EUR} €</span> para generar el reparto.
             </div>
           ) : (
             <div className="space-y-1.5">
@@ -809,8 +822,11 @@ export default function DivisionBudgetSection({
                       return (
                         <tr key={item.employee.employeeId} className="hover:bg-slate-50/80">
                           <td className="px-2.5 py-1.5 min-w-0">
-                            <div className="font-semibold text-slate-900 truncate max-w-[155px]">
-                              {item.employee.name} {item.employee.surname}
+                            <div className="font-semibold text-slate-900 flex items-center gap-1 min-w-0">
+                              <span className="truncate max-w-[140px]">
+                                {item.employee.name} {item.employee.surname}
+                              </span>
+                              <EmployeeRecognitionIcons employee={item.employee} size="xs" />
                             </div>
                             <div className="text-[10px] text-slate-500 truncate">
                               {curLvl}
@@ -836,11 +852,22 @@ export default function DivisionBudgetSection({
                             {item.finalScore.toFixed(2)}
                           </td>
                           <td
-                            className={`px-2.5 py-1.5 text-right font-mono tabular-nums font-bold whitespace-nowrap ${
+                            className={`px-2.5 py-1.5 text-right font-mono tabular-nums whitespace-nowrap ${
                               item.recommendedRaiseEur > 0 ? 'text-emerald-700' : 'text-slate-400'
                             }`}
                           >
-                            {formatWholeEur(item.recommendedRaiseEur)}
+                            <div className="font-bold leading-tight">
+                              {formatWholeEur(item.recommendedRaiseEur)}
+                            </div>
+                            <div
+                              className={`text-[10px] font-semibold leading-tight ${
+                                item.recommendedRaiseEur > 0 ? 'text-emerald-600/85' : 'text-slate-400'
+                              }`}
+                            >
+                              {item.recommendedRaiseEur > 0
+                                ? `+${item.salaryRaisePercent.toFixed(1)}%`
+                                : '0.0%'}
+                            </div>
                           </td>
                         </tr>
                       );

@@ -77,6 +77,37 @@ export interface EmployeeCertification {
   expiryDate: string;
 }
 
+export type RecognitionTagId = 'high_potential' | 'key_person';
+
+export interface RecognitionDefinition {
+  id: RecognitionTagId;
+  label: string;
+  tooltip: string;
+  description: string;
+}
+
+export const TALENT_RECOGNITIONS: RecognitionDefinition[] = [
+  {
+    id: 'high_potential',
+    label: 'Alto Potencial',
+    tooltip: 'Alto potencial',
+    description:
+      'Indica que es un perfil estratégico con gran proyección de crecimiento y desarrollo dentro de la empresa. Su perfil mostrará un distintivo visible para el resto de responsables y administradores.'
+  },
+  {
+    id: 'key_person',
+    label: 'Key person',
+    tooltip: 'Key person',
+    description:
+      'Indica que es una persona clave para la continuidad operativa, el conocimiento crítico o los clientes estratégicos de la empresa. Su perfil mostrará un distintivo visible para el resto de responsables y administradores.'
+  }
+];
+
+export const VALID_RECOGNITION_IDS = new Set<string>(TALENT_RECOGNITIONS.map(r => r.id));
+
+export const getRecognitionDefinition = (id: string): RecognitionDefinition | undefined =>
+  TALENT_RECOGNITIONS.find(r => r.id === id);
+
 export interface Employee {
   employeeId: string;
   name: string;
@@ -93,6 +124,8 @@ export interface Employee {
   hireDate: string;
   status: 'Active' | 'OnLeave' | 'Terminated';
   availabilityPercent: number; // 0 to 100
+  recognitions?: string[];
+  salaryEur?: number;
   skills: EmployeeSkill[];
   certifications: EmployeeCertification[];
   projectHistory: { projectId: string; role: string; performance: number }[];
@@ -101,17 +134,50 @@ export interface Employee {
   languages?: string[];
 }
 
+export const STANDARD_DIVISIONS = [
+  'Software Engineering',
+  'Architecture & Tech Leadership',
+  'Project & Product Management',
+  'Consulting',
+  'Data & AI'
+] as const;
+
 export interface Project {
   projectId: string;
   clientName: string;
   projectName: string;
   businessUnit: string;
+  division?: string;
   status: 'InPreparation' | 'Active' | 'OnHold' | 'Completed';
   startDate: string;
   endDate: string;
   budget: number;
   technologies: string[];
 }
+
+export type RoleCriticality = 'Low' | 'Medium' | 'High' | 'Critical';
+
+export const ROLE_CRITICALITY_META: Record<
+  RoleCriticality,
+  { label: string; description: string }
+> = {
+  Low: {
+    label: 'Baja',
+    description: 'Posición estándar sin exigencia adicional de autonomía o criticidad.'
+  },
+  Medium: {
+    label: 'Media',
+    description: 'Posición operativa habitual con ponderación equilibrada entre técnica y disponibilidad.'
+  },
+  High: {
+    label: 'Alta',
+    description: 'Posición sensible: aumenta la prioridad de talento Alto Potencial, buenas evaluaciones e independencia.'
+  },
+  Critical: {
+    label: 'Crítica',
+    description: 'Posición de máxima criticidad: prioriza fuertemente Alto Potencial, evaluaciones excelentes y autonomía demostrada.'
+  }
+};
 
 export interface ProjectRoleRequest {
   id: string;
@@ -122,6 +188,7 @@ export interface ProjectRoleRequest {
   startDate: string;
   allocation: number; // expected % dedication
   priority: 'High' | 'Medium' | 'Low';
+  criticality?: RoleCriticality;
 }
 
 export interface ProjectAssignment {
@@ -142,6 +209,15 @@ export interface MatchingResult {
   levelScore: number; // 0-100
   availabilityScore: number; // 0-100
   performanceScore: number; // 0-100
+  criticalityFitScore?: number; // 0-100
+  autonomyScore?: number; // 0-100
+  evaluationScore?: number | null; // 1-5
+  criticalitySignals?: string[];
+  requestCriticality?: RoleCriticality;
+  sameDivision?: boolean;
+  projectDivision?: string;
+  candidateDivision?: string;
+  crossDivisionGoodMatch?: boolean;
   globalScore: number; // 0-100
 }
 
@@ -565,6 +641,19 @@ export const getLevelTargetScore = (levelId: string): number => {
     case 'L6':
     case 'L7': return 5.0;
     default: return 3.0;
+  }
+};
+
+export const getDefaultSalaryForLevel = (levelId: string): number => {
+  switch (levelId) {
+    case 'L1': return 22000;
+    case 'L2': return 29000;
+    case 'L3': return 38000;
+    case 'L4': return 50000;
+    case 'L5': return 64000;
+    case 'L6': return 80000;
+    case 'L7': return 95000;
+    default: return 35000;
   }
 };
 
