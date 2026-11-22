@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Activity, AlertTriangle, TrendingUp } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Activity, AlertTriangle, ChevronDown, ChevronRight, TrendingUp } from 'lucide-react';
 import { CheckpointReview, getRequiredStage } from '../types';
 import TruncatedTooltip from './TruncatedTooltip';
 import {
@@ -39,9 +39,15 @@ export default function CheckpointProgressChart({
   const [chartMode, setChartMode] = useState<'media' | 'competencies'>('media');
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [selectedCompId, setSelectedCompId] = useState<string | null>(null);
+  const [isAlertExpanded, setIsAlertExpanded] = useState(false);
 
   // Chronological order (oldest -> newest) for left-to-right progression
   const sortedChronological = sortCheckpointsChronological(checkpoints);
+  const checkpointIdsKey = sortedChronological.map(c => c.id).join('|');
+
+  useEffect(() => {
+    setIsAlertExpanded(false);
+  }, [checkpointIdsKey]);
 
   if (sortedChronological.length <= 1) {
     return null;
@@ -238,51 +244,66 @@ export default function CheckpointProgressChart({
         </div>
       </div>
 
-      {/* Competency Score Drop Alert Strip (one global entry per unrecovered competency) */}
+      {/* Competency Score Drop Alert Strip (collapsed by default, expands on click) */}
       {unrecoveredDrops.length > 0 && (
         <div
           role="alert"
-          className="bg-rose-50 border border-rose-200 rounded-lg px-3 py-2 text-xs text-rose-900 space-y-1.5"
+          className="bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-900 overflow-hidden"
         >
-          <div className="flex items-center gap-1.5 font-bold text-rose-800">
-            <AlertTriangle className="h-3.5 w-3.5 text-rose-600 shrink-0" />
-            <span>
-              Alerta: descenso global en {unrecoveredDrops.length}{' '}
-              {unrecoveredDrops.length === 1 ? 'competencia' : 'competencias'}
+          <button
+            type="button"
+            onClick={() => setIsAlertExpanded(prev => !prev)}
+            aria-expanded={isAlertExpanded}
+            className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left font-bold text-rose-800 hover:bg-rose-100/60 transition-colors cursor-pointer"
+          >
+            <span className="flex items-center gap-1.5">
+              <AlertTriangle className="h-3.5 w-3.5 text-rose-600 shrink-0" />
+              <span>
+                Alerta: descenso global en {unrecoveredDrops.length}{' '}
+                {unrecoveredDrops.length === 1 ? 'competencia' : 'competencias'}
+              </span>
             </span>
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            {unrecoveredDrops.map(drop => {
-              const compName =
-                compMetaList.find(c => c.id === drop.competencyId)?.name || drop.competencyId;
-              const isSelectedComp =
-                chartMode === 'competencies' && selectedCompId === drop.competencyId;
-              return (
-                <button
-                  key={drop.competencyId}
-                  type="button"
-                  onClick={() => {
-                    setChartMode('competencies');
-                    setSelectedCompId(drop.competencyId);
-                  }}
-                  title={`Ver ${compName} en gráfica (${drop.previousReviewDate} → ${drop.reviewDate})`}
-                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium border transition-colors ${
-                    isSelectedComp
-                      ? 'bg-rose-600 text-white border-rose-600'
-                      : 'bg-white text-rose-800 border-rose-200 hover:bg-rose-100'
-                  }`}
-                >
-                  <span>{compName}:</span>
-                  <span className="font-mono font-bold tabular-nums">
-                    {drop.previousScore.toFixed(1)} → {drop.currentScore.toFixed(1)}
-                  </span>
-                  <span className="font-mono text-[10px] opacity-85">
-                    ({drop.delta.toFixed(1)})
-                  </span>
-                </button>
-              );
-            })}
-          </div>
+            {isAlertExpanded ? (
+              <ChevronDown className="h-3.5 w-3.5 text-rose-600 shrink-0" />
+            ) : (
+              <ChevronRight className="h-3.5 w-3.5 text-rose-600 shrink-0" />
+            )}
+          </button>
+
+          {isAlertExpanded && (
+            <div className="px-3 pb-2.5 pt-1.5 flex flex-wrap gap-1.5 border-t border-rose-200/70">
+              {unrecoveredDrops.map(drop => {
+                const compName =
+                  compMetaList.find(c => c.id === drop.competencyId)?.name || drop.competencyId;
+                const isSelectedComp =
+                  chartMode === 'competencies' && selectedCompId === drop.competencyId;
+                return (
+                  <button
+                    key={drop.competencyId}
+                    type="button"
+                    onClick={() => {
+                      setChartMode('competencies');
+                      setSelectedCompId(drop.competencyId);
+                    }}
+                    title={`Ver ${compName} en gráfica (${drop.previousReviewDate} → ${drop.reviewDate})`}
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium border transition-colors ${
+                      isSelectedComp
+                        ? 'bg-rose-600 text-white border-rose-600'
+                        : 'bg-white text-rose-800 border-rose-200 hover:bg-rose-100'
+                    }`}
+                  >
+                    <span>{compName}:</span>
+                    <span className="font-mono font-bold tabular-nums">
+                      {drop.previousScore.toFixed(1)} → {drop.currentScore.toFixed(1)}
+                    </span>
+                    <span className="font-mono text-[10px] opacity-85">
+                      ({drop.delta.toFixed(1)})
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
